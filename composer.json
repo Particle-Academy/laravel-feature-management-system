@@ -1,0 +1,45 @@
+{
+    "name": "particle-academy/laravel-fms",
+    "description": "Laravel Feature Management System (FMS) for product feature entitlements and usage tracking",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "laravel",
+        "feature-management",
+        "feature-flags",
+        "entitlements"
+    ],
+    "require": {
+        "php": "^8.2",
+        "laravel/framework": "^11.0|^12.0",
+        "nesbot/carbon": "^2.0|^3.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0|^4.0",
+        "pestphp/pest-plugin-laravel": "^3.0|^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "ParticleAcademy\\Fms\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ParticleAcademy\\Fms\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "ParticleAcademy\\Fms\\FmsServiceProvider"
+            ],
+            "aliases": {
+                "FMS": "ParticleAcademy\\Fms\\Facades\\FMS"
+            }
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
+
