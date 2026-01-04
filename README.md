@@ -1,3 +1,4 @@
+[![Powered by Tynn](https://img.shields.io/endpoint?url=https%3A%2F%2Ftynn.ai%2Fo%2Fparticle-academy%2Flaravel-catalog%2Fbadge.json)](https://tynn.ai/o/particle-academy/laravel-catalog)
 # Laravel Feature Management System (FMS)
 
 A standalone Laravel package for flexible feature access control and management. FMS provides simple, intuitive ways to control feature access using multiple strategies: Gates/Policies, config-based, registry-based, and database lookups.
