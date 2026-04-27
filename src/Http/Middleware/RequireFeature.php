@@ -25,9 +25,13 @@ class RequireFeature
      */
     public function handle(Request $request, Closure $next, string ...$features): Response
     {
-        // If no features specified, allow access
+        // Fail closed when the middleware is misconfigured. Silently allowing
+        // traffic past a "require feature" gate is dangerous — a typo in the
+        // route definition would mask the misconfiguration.
         if (empty($features)) {
-            return $next($request);
+            throw new \RuntimeException(
+                'RequireFeature middleware requires at least one feature argument.'
+            );
         }
 
         // Check if user has access to any of the required features (OR logic)

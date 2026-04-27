@@ -6,6 +6,7 @@ use ParticleAcademy\Fms\Models\FeatureUsage;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Fms service
@@ -161,6 +162,12 @@ class Fms
      * Increment usage for a resource feature by the given amount.
      * Why: Tracks consumption of metered features (tokens, API calls, etc.).
      *
+     * NOTE: This method does NOT enforce the configured quota. For
+     * quota-bearing features, use tryIncrement() — it atomically checks
+     * remaining quota and increments under a row lock, preventing the
+     * `can()`+`increment()` TOCTOU race that allows concurrent requests
+     * to exceed the limit.
+     *
      * @param  string  $featureKey  The feature key to increment
      * @param  int  $amount  The amount to increment by (default 1)
      * @param  mixed  $scope  The subscription scope (BillingSubscription, User, or null for auth user)
@@ -190,6 +197,81 @@ class Fms
         $usage->increment('used_quantity', $amount);
 
         return true;
+    }
+
+    /**
+     * Atomically check quota and increment usage for a metered feature.
+     *
+     * Why: The pattern `if ($fms->can(...)) { $fms->increment(...); }` is
+     * race-prone — two concurrent requests can both pass the check before
+     * either increments, exceeding the quota. tryIncrement() locks the
+     * usage row, re-checks remaining inside the transaction, and either
+     * commits the increment or returns false. Use this for any quota-bearing
+     * feature (tokens, API calls, seat counts).
+     *
+     * @param  string  $featureKey  The feature key to increment
+     * @param  int  $amount  The amount to increment by (default 1)
+     * @param  mixed  $scope  The subscription scope
+     * @return bool True if quota allowed and increment was applied; false if
+     *              quota would be exceeded, feature missing, or subscription missing.
+     */
+    public function tryIncrement(string $featureKey, int $amount = 1, mixed $scope = null): bool
+    {
+        $subscription = $this->resolveSubscriptionScope($scope);
+
+        if (! $subscription) {
+            return false;
+        }
+
+        $productFeatureClass = config('fms.product_feature_model');
+
+        if (! $productFeatureClass || ! class_exists($productFeatureClass)) {
+            return false;
+        }
+
+        $feature = $productFeatureClass::query()->where('key', $featureKey)->first();
+
+        if (! $feature || $feature->type !== 'resource') {
+            return false;
+        }
+
+        $product = $subscription->product();
+
+        if (! $product) {
+            return false;
+        }
+
+        $config = $product->productFeatures()
+            ->where('product_features.id', $feature->id)
+            ->first()?->pivot;
+
+        if (! $config || $config->included_quantity === null) {
+            return false;
+        }
+
+        return DB::transaction(function () use ($subscription, $feature, $config, $amount) {
+            $usage = $this->getOrCreateCurrentPeriodUsage($subscription, $feature);
+
+            // Re-fetch with row lock so concurrent transactions serialize.
+            $locked = FeatureUsage::query()
+                ->whereKey($usage->getKey())
+                ->lockForUpdate()
+                ->first();
+
+            if (! $locked) {
+                return false;
+            }
+
+            $remaining = (int) $config->included_quantity - (int) $locked->used_quantity;
+
+            if ($remaining < $amount) {
+                return false;
+            }
+
+            $locked->increment('used_quantity', $amount);
+
+            return true;
+        });
     }
 
     /**
@@ -243,11 +325,11 @@ class Fms
         }
 
         $productFeatureClass = config('fms.product_feature_model');
-        
+
         if (! $productFeatureClass || ! class_exists($productFeatureClass)) {
-            return false;
+            return 0;
         }
-        
+
         $feature = $productFeatureClass::query()->where('key', $featureKey)->first();
 
         if (! $feature) {
