@@ -77,14 +77,68 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | FMS Feature Groups
+    |--------------------------------------------------------------------------
+    |
+    | A feature group bundles a set of features under a single key. Subjects
+    | (User, Team, Org, Product, anything implementing HasFeatureGroups)
+    | get assigned to groups via the polymorphic feature_group_assignments
+    | pivot. When a feature is checked, every enabled group containing
+    | that feature OR's into the result. Resource limits supplied by groups
+    | take MAX across all enabled groups.
+    |
+    | Group Configuration Options:
+    |
+    | - 'name': string - Human-readable label
+    | - 'description': string - Free-form description for admin/devtools
+    | - 'features': array<string> - Feature keys this group enables
+    | - 'extends': array<string> - Other group keys whose features merge in
+    |                              (one level deep — no transitive expansion)
+    | - 'overrides': array<string, array> - Per-feature overrides keyed by
+    |                                       feature key. Today supports `limit`.
+    | - 'enabled': bool|callable - Optional gate. If truthy, the group is
+    |                              considered enabled regardless of pivot
+    |                              assignment. Use for cohort/plan-callable
+    |                              groups; omit for explicit-assignment groups.
+    |
+    | Examples:
+    |
+    |   'pro-plan' => [
+    |       'name' => 'Pro Plan',
+    |       'features' => ['use-mcp', 'ai-tokens'],
+    |       'overrides' => ['ai-tokens' => ['limit' => 50000]],
+    |   ],
+    |
+    |   'enterprise' => [
+    |       'name' => 'Enterprise',
+    |       'extends' => ['pro-plan'],
+    |       'features' => ['sso', 'audit-log'],
+    |       'overrides' => ['ai-tokens' => ['limit' => 250000]],
+    |   ],
+    |
+    |   'ai-beta' => [
+    |       'name' => 'AI Beta cohort',
+    |       'features' => ['experimental-llm'],
+    |       'enabled' => fn($user) => $user?->is_in_ai_beta ?? false,
+    |   ],
+    |
+    */
+
+    'groups' => [
+        // Define your feature groups here. Empty array is a valid default.
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Default Strategy
     |--------------------------------------------------------------------------
     |
     | The order in which feature access checks are performed:
     | 1. Gate/Policy checks (if defined)
     | 2. Registry definitions (from FmsFeatureRegistry)
-    | 3. Config file definitions (this file)
-    | 4. Database lookups (if FeatureUsage model is available)
+    | 3. Feature Group resolution (any enabled group containing the feature)
+    | 4. Config file definitions (this file)
+    | 5. Database lookups (if FeatureUsage model is available)
     |
     */
     'default_strategy' => 'config', // 'config', 'database', 'gate', 'registry'

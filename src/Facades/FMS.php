@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Facade;
  * @method static bool hasFeature(string $feature, ?\Illuminate\Contracts\Auth\Authenticatable $user = null, mixed $context = null)
  * @method static int|null remaining(string $feature, ?\Illuminate\Contracts\Auth\Authenticatable $user = null, mixed $context = null)
  * @method static array<string> enabled(?\Illuminate\Contracts\Auth\Authenticatable $user = null, mixed $context = null)
+ * @method static array<string> enabledGroupsFor(?\Illuminate\Contracts\Auth\Authenticatable $user = null, mixed $context = null)
+ * @method static array{feature:string,source:string,enabled:bool,detail:array<string,mixed>} explain(string $feature, ?\Illuminate\Contracts\Auth\Authenticatable $user = null, mixed $context = null)
  *
  * @see \ParticleAcademy\Fms\Services\FeatureManager
  */

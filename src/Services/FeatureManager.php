@@ -4,90 +4,122 @@ namespace ParticleAcademy\Fms\Services;
 
 use ParticleAcademy\Fms\Contracts\FeatureManagerInterface;
 use ParticleAcademy\Fms\Services\FmsFeatureRegistry;
+use ParticleAcademy\Fms\Services\FmsFeatureGroupRegistry;
+use ParticleAcademy\Fms\Models\FeatureGroupAssignment;
+use ParticleAcademy\Fms\ValueObjects\FeatureGroup;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
 /**
  * Feature Manager Service
- * Why: Core service for checking feature access using multiple strategies:
- * config-based, registry-based, gate/policy checks, and database lookups.
+ *
+ * Resolution order:
+ *   1. Gate / Policy
+ *   2. Registry (FmsFeatureRegistry)
+ *   3. Feature Groups (FmsFeatureGroupRegistry) — OR'd across all
+ *      groups enabled for the subject (via pivot or callable gate)
+ *   4. Config (config/fms.php features.{key}.enabled)
+ *   5. Database (subclass extension hook)
+ *
+ * Resource limits aggregate as MAX across all enabled groups containing
+ * the feature, then fall back to the feature's own limit.
  */
 class FeatureManager implements FeatureManagerInterface
 {
     public function __construct(
-        protected FmsFeatureRegistry $registry
+        protected FmsFeatureRegistry $registry,
+        protected ?FmsFeatureGroupRegistry $groupRegistry = null,
     ) {}
 
-    /**
-     * Check if a feature is accessible for the given user/context.
-     */
     public function canAccess(string $feature, ?Authenticatable $user = null, mixed $context = null): bool
     {
         $user = $user ?? Auth::user();
 
-        // Strategy 1: Check Laravel Gate/Policy if defined
+        // Gate / Policy is the only authoritative override — if defined, its
+        // verdict is final (allow OR deny), bypassing other sources entirely.
         if (Gate::has($feature)) {
             return Gate::forUser($user)->allows($feature, $context);
         }
 
-        // Strategy 2: Check feature registry definition
+        // OR semantics across the remaining sources: any source that
+        // says "enabled" turns the feature on. A registry/config feature
+        // with `enabled: false` does NOT block a group from activating
+        // it — groups are additive by design.
         $definition = $this->registry->definition($feature);
-        if ($definition !== null) {
-            return $this->checkDefinition($definition, $user, $context);
+        if ($definition !== null && $this->checkDefinition($definition, $user, $context)) {
+            return true;
         }
 
-        // Strategy 3: Check config file
+        if ($this->isEnabledViaGroups($feature, $user, $context)) {
+            return true;
+        }
+
         $configValue = config("fms.features.{$feature}.enabled", null);
-        if ($configValue !== null) {
-            return $this->evaluateConfigValue($configValue, $user, $context);
+        if ($configValue !== null && $this->evaluateConfigValue($configValue, $user, $context)) {
+            return true;
         }
 
-        // Strategy 4: Check database if FeatureUsage model exists
+        // Database fallback (extension hook).
         if ($this->hasDatabaseSupport()) {
             return $this->checkDatabaseFeature($feature, $user, $context);
         }
 
-        // Default: feature not found, deny access
         return false;
     }
 
-    /**
-     * Check if a feature is enabled (simple boolean check).
-     */
     public function isEnabled(string $feature, ?Authenticatable $user = null, mixed $context = null): bool
     {
         return $this->canAccess($feature, $user, $context);
     }
 
-    /**
-     * Check if user has access to a feature (alias for canAccess).
-     */
     public function hasFeature(string $feature, ?Authenticatable $user = null, mixed $context = null): bool
     {
         return $this->canAccess($feature, $user, $context);
     }
 
-    /**
-     * Get the remaining quantity for a resource-based feature.
-     */
     public function remaining(string $feature, ?Authenticatable $user = null, mixed $context = null): ?int
     {
         $user = $user ?? Auth::user();
 
-        // Check registry definition first
+        // Group-supplied limit (max across enabled groups) takes precedence
+        // when a group provides an override, since a paid plan should be
+        // able to lift the base feature's limit.
+        $groupLimit = $this->resolveGroupLimitOverride($feature, $user, $context);
+
+        // Registry limit
         $definition = $this->registry->definition($feature);
         if ($definition !== null && ($definition['type'] ?? null) === 'resource') {
-            return $this->getResourceRemaining($definition, $feature, $user, $context);
+            return $this->getResourceRemaining(
+                $this->withMergedLimit($definition, $groupLimit),
+                $feature,
+                $user,
+                $context
+            );
         }
 
-        // Check config
+        // Config limit
         $config = config("fms.features.{$feature}", null);
         if ($config !== null && ($config['type'] ?? null) === 'resource') {
-            return $this->getResourceRemaining($config, $feature, $user, $context);
+            return $this->getResourceRemaining(
+                $this->withMergedLimit($config, $groupLimit),
+                $feature,
+                $user,
+                $context
+            );
         }
 
-        // Check database if available
+        // No registry/config feature definition but a group does override
+        // the limit — treat as a resource feature with that limit.
+        if ($groupLimit !== null) {
+            return $this->getResourceRemaining(
+                ['type' => 'resource', 'limit' => $groupLimit],
+                $feature,
+                $user,
+                $context
+            );
+        }
+
         if ($this->hasDatabaseSupport()) {
             return $this->getDatabaseResourceRemaining($feature, $user, $context);
         }
@@ -95,143 +127,293 @@ class FeatureManager implements FeatureManagerInterface
         return null;
     }
 
-    /**
-     * Get all enabled features for a user/context.
-     */
     public function enabled(?Authenticatable $user = null, mixed $context = null): array
     {
         $user = $user ?? Auth::user();
         $enabled = [];
 
-        // Check registry features
         foreach (array_keys($this->registry->all()) as $feature) {
             if ($this->canAccess($feature, $user, $context)) {
                 $enabled[] = $feature;
             }
         }
 
-        // Check config features
         $configFeatures = config('fms.features', []);
         foreach (array_keys($configFeatures) as $feature) {
-            if (!in_array($feature, $enabled) && $this->canAccess($feature, $user, $context)) {
+            if (!in_array($feature, $enabled, true) && $this->canAccess($feature, $user, $context)) {
                 $enabled[] = $feature;
             }
         }
 
-        return array_unique($enabled);
+        // Features only exposed through groups also count.
+        if ($this->groupRegistry !== null) {
+            foreach ($this->enabledGroupsFor($user, $context) as $groupKey) {
+                foreach ($this->groupRegistry->resolvedFeatures($groupKey) as $feature) {
+                    if (!in_array($feature, $enabled, true)) {
+                        $enabled[] = $feature;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($enabled));
     }
 
     /**
-     * Check a feature definition against user/context.
+     * Trace a feature's resolution. Returns the path FeatureManager would
+     * take with structured payload. Surfaces "why is this on/off?" — used
+     * by the `fms:resolve` artisan command and by app-level devtools.
+     *
+     * @return array{feature:string, source:string, enabled:bool, detail:array<string,mixed>}
      */
+    public function explain(string $feature, ?Authenticatable $user = null, mixed $context = null): array
+    {
+        $user = $user ?? Auth::user();
+
+        // Gate is authoritative — return its verdict regardless of value.
+        if (Gate::has($feature)) {
+            return [
+                'feature' => $feature,
+                'source' => 'gate',
+                'enabled' => Gate::forUser($user)->allows($feature, $context),
+                'detail' => ['gate' => $feature],
+            ];
+        }
+
+        // OR semantics: return the first source that says enabled. Order is
+        // registry → group → config so a "richer" source wins over a fallback.
+        $definition = $this->registry->definition($feature);
+        if ($definition !== null && $this->checkDefinition($definition, $user, $context)) {
+            return [
+                'feature' => $feature,
+                'source' => 'registry',
+                'enabled' => true,
+                'detail' => $definition,
+            ];
+        }
+
+        $matchingGroups = $this->matchingEnabledGroups($feature, $user, $context);
+        if ($matchingGroups !== []) {
+            return [
+                'feature' => $feature,
+                'source' => 'group',
+                'enabled' => true,
+                'detail' => [
+                    'groups' => $matchingGroups,
+                    'limit_override' => $this->resolveGroupLimitOverride($feature, $user, $context),
+                ],
+            ];
+        }
+
+        $configValue = config("fms.features.{$feature}.enabled", null);
+        if ($configValue !== null && $this->evaluateConfigValue($configValue, $user, $context)) {
+            return [
+                'feature' => $feature,
+                'source' => 'config',
+                'enabled' => true,
+                'detail' => ['enabled' => $configValue],
+            ];
+        }
+
+        // Nothing enabled. Report the most-specific source that *defined*
+        // the feature, even if it disabled it — useful for "why is this off?"
+        if ($definition !== null) {
+            return [
+                'feature' => $feature,
+                'source' => 'registry',
+                'enabled' => false,
+                'detail' => $definition,
+            ];
+        }
+        if ($configValue !== null) {
+            return [
+                'feature' => $feature,
+                'source' => 'config',
+                'enabled' => false,
+                'detail' => ['enabled' => $configValue],
+            ];
+        }
+
+        return [
+            'feature' => $feature,
+            'source' => 'none',
+            'enabled' => false,
+            'detail' => [],
+        ];
+    }
+
+    /**
+     * Group keys enabled for the subject — both pivot-assigned (when
+     * the subject is a HasFeatureGroups model) and `enabled`-callable
+     * matches.
+     *
+     * @return array<int,string>
+     */
+    public function enabledGroupsFor(?Authenticatable $user = null, mixed $context = null): array
+    {
+        if ($this->groupRegistry === null) {
+            return [];
+        }
+        $user = $user ?? Auth::user();
+        $keys = [];
+
+        // Pivot-assigned (only meaningful when the subject persists a model).
+        if ($user !== null && method_exists($user, 'featureGroups')) {
+            foreach ($user->featureGroups() as $groupKey) {
+                $keys[] = $groupKey;
+            }
+        }
+
+        // Callable-gated groups.
+        foreach ($this->groupRegistry->all() as $key => $group) {
+            if ($group->isEnabledByCallable($user, $context)) {
+                $keys[] = $key;
+            }
+        }
+
+        return array_values(array_unique($keys));
+    }
+
+    protected function isEnabledViaGroups(string $feature, ?Authenticatable $user, mixed $context): bool
+    {
+        return $this->matchingEnabledGroups($feature, $user, $context) !== [];
+    }
+
+    /**
+     * Subset of enabled groups that ALSO contain the given feature.
+     *
+     * @return array<int,string>
+     */
+    protected function matchingEnabledGroups(string $feature, ?Authenticatable $user, mixed $context): array
+    {
+        if ($this->groupRegistry === null) {
+            return [];
+        }
+        $matching = [];
+        foreach ($this->enabledGroupsFor($user, $context) as $groupKey) {
+            if (in_array($feature, $this->groupRegistry->resolvedFeatures($groupKey), true)) {
+                $matching[] = $groupKey;
+            }
+        }
+        return $matching;
+    }
+
+    /**
+     * Maximum of all `limit` overrides across enabled groups that contain
+     * this feature. Returns null if no group provides an override (caller
+     * falls back to the registry/config limit).
+     */
+    protected function resolveGroupLimitOverride(string $feature, ?Authenticatable $user, mixed $context): ?int
+    {
+        if ($this->groupRegistry === null) {
+            return null;
+        }
+        $maxLimit = null;
+        foreach ($this->matchingEnabledGroups($feature, $user, $context) as $groupKey) {
+            $overrides = $this->groupRegistry->resolvedOverrides($groupKey);
+            if (!isset($overrides[$feature]['limit'])) {
+                continue;
+            }
+            $candidate = $overrides[$feature]['limit'];
+            $candidate = is_callable($candidate)
+                ? (int) call_user_func($candidate, $user, $context)
+                : (int) $candidate;
+            if ($maxLimit === null || $candidate > $maxLimit) {
+                $maxLimit = $candidate;
+            }
+        }
+        return $maxLimit;
+    }
+
+    /**
+     * Returns a copy of the feature definition with the limit replaced by
+     * the group-supplied override if it's higher (max wins). Preserves the
+     * other fields untouched.
+     *
+     * @param  array<string,mixed>  $definition
+     * @return array<string,mixed>
+     */
+    protected function withMergedLimit(array $definition, ?int $groupLimit): array
+    {
+        if ($groupLimit === null) {
+            return $definition;
+        }
+        $current = $definition['limit'] ?? null;
+        $resolvedCurrent = is_callable($current) ? null : (int) ($current ?? 0);
+        if ($resolvedCurrent !== null && $resolvedCurrent >= $groupLimit) {
+            return $definition;
+        }
+        $merged = $definition;
+        $merged['limit'] = $groupLimit;
+        return $merged;
+    }
+
     protected function checkDefinition(array $definition, ?Authenticatable $user, mixed $context): bool
     {
-        // If definition has a closure/callable check
         if (isset($definition['check']) && is_callable($definition['check'])) {
             return (bool) call_user_func($definition['check'], $user, $context);
         }
-
-        // If definition has enabled flag
         if (isset($definition['enabled'])) {
             return $this->evaluateConfigValue($definition['enabled'], $user, $context);
         }
-
-        // Default: enabled if definition exists
         return true;
     }
 
-    /**
-     * Evaluate a config value (can be boolean, closure, or callable).
-     */
     protected function evaluateConfigValue(mixed $value, ?Authenticatable $user, mixed $context): bool
     {
         if (is_bool($value)) {
             return $value;
         }
-
         if (is_callable($value)) {
             return (bool) call_user_func($value, $user, $context);
         }
-
         return false;
     }
 
-    /**
-     * Get remaining quantity for a resource feature.
-     */
     protected function getResourceRemaining(array $definition, string $feature, ?Authenticatable $user, mixed $context): ?int
     {
-        // Check if definition has a remaining callback
         if (isset($definition['remaining']) && is_callable($definition['remaining'])) {
             return call_user_func($definition['remaining'], $feature, $user, $context);
         }
-
-        // Check config for limit
         $limit = $definition['limit'] ?? config("fms.features.{$feature}.limit", null);
+        if (is_callable($limit)) {
+            $limit = (int) call_user_func($limit, $user, $context);
+        }
         if ($limit === null) {
             return null;
         }
-
-        // Get usage if available
         $usage = $this->getResourceUsage($definition, $feature, $user, $context);
-
         return max(0, (int) $limit - (int) $usage);
     }
 
-    /**
-     * Get current usage for a resource feature.
-     */
     protected function getResourceUsage(array $definition, string $feature, ?Authenticatable $user, mixed $context): int
     {
-        // Check if definition has a usage callback
         if (isset($definition['usage']) && is_callable($definition['usage'])) {
             return (int) call_user_func($definition['usage'], $feature, $user, $context);
         }
-
-        // Check database if available
         if ($this->hasDatabaseSupport()) {
             return $this->getDatabaseResourceUsage($feature, $user, $context);
         }
-
         return 0;
     }
 
-    /**
-     * Check if database support is available (FeatureUsage model exists).
-     */
     protected function hasDatabaseSupport(): bool
     {
         return class_exists(\ParticleAcademy\Fms\Models\FeatureUsage::class);
     }
 
-    /**
-     * Check feature access via database.
-     */
     protected function checkDatabaseFeature(string $feature, ?Authenticatable $user, mixed $context): bool
     {
-        // This would require integration with a subscription/plan system
-        // For now, return false - can be extended by applications
         return false;
     }
 
-    /**
-     * Get remaining quantity from database.
-     */
     protected function getDatabaseResourceRemaining(string $feature, ?Authenticatable $user, mixed $context): ?int
     {
-        // This would require integration with a subscription/plan system
-        // For now, return null - can be extended by applications
         return null;
     }
 
-    /**
-     * Get usage from database.
-     */
     protected function getDatabaseResourceUsage(string $feature, ?Authenticatable $user, mixed $context): int
     {
-        // This would require integration with a subscription/plan system
-        // For now, return 0 - can be extended by applications
         return 0;
     }
 }
-

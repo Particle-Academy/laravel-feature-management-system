@@ -7,6 +7,7 @@ A standalone Laravel package for flexible feature access control and management.
 
 - **Multiple Access Control Strategies**: Gates/Policies, config files, feature registry, or database
 - **Boolean & Resource Features**: Support for simple on/off features and metered resource features
+- **Feature Groups**: Bundle features into reusable groups (Pro plan, Enterprise, AI Beta cohort, etc.) and assign them polymorphically to any model
 - **Middleware Protection**: Protect routes based on feature access
 - **Facade & Helpers**: Clean API via facade and global helper functions
 - **Standalone Package**: Zero dependencies on other packages
@@ -109,6 +110,101 @@ $remaining = feature_remaining('ai-tokens', $user);
 // Get all enabled features
 $enabled = enabled_features($user);
 ```
+
+### Feature Groups
+
+Big apps grow lots of features, and remembering which to flip on for which plan/tier becomes tedious. **Feature groups** bundle features under a single key, and any model that uses the `HasFeatureGroups` trait can be polymorphically assigned to one or more groups.
+
+#### Define groups in `config/fms.php`
+
+```php
+'groups' => [
+    'pro-plan' => [
+        'name' => 'Pro Plan',
+        'features' => ['use-mcp', 'ai-tokens', 'team-sharing'],
+        'overrides' => [
+            'ai-tokens' => ['limit' => 50000],   // lift the base limit
+        ],
+    ],
+
+    'enterprise' => [
+        'name' => 'Enterprise',
+        'extends' => ['pro-plan'],               // one level deep
+        'features' => ['sso', 'audit-log'],
+        'overrides' => [
+            'ai-tokens' => ['limit' => 250000],
+        ],
+    ],
+
+    'ai-beta' => [
+        'name' => 'AI Beta cohort',
+        'features' => ['experimental-llm'],
+        'enabled' => fn ($user) => $user?->in_ai_beta === true,   // callable gate, no pivot needed
+    ],
+],
+```
+
+#### Make a model assignable
+
+```php
+use ParticleAcademy\Fms\Concerns\HasFeatureGroups;
+
+class User extends Authenticatable
+{
+    use HasFeatureGroups;
+}
+```
+
+#### Assign + check
+
+```php
+$user->attachFeatureGroup('pro-plan');
+$user->attachFeatureGroup('enterprise');
+
+FMS::canAccess('use-mcp', $user);     // true (via pro-plan)
+FMS::remaining('ai-tokens', $user);    // 250000 (max of all enabled groups)
+FMS::enabledGroupsFor($user);          // ['pro-plan', 'enterprise']
+FMS::explain('use-mcp', $user);        // ['source' => 'group', 'detail' => ['groups' => ['pro-plan', 'enterprise'], ...]]
+```
+
+#### Resolution semantics
+
+A feature is enabled if **any** of these returns true:
+
+1. `Gate::has($feature)` is defined and grants access (Gate is authoritative — also the only path that can DENY)
+2. The feature's registry definition has `enabled: true` or its `check` returns true
+3. **Any enabled feature group containing this feature** (NEW)
+4. The config file has `enabled: true` for this feature
+
+For resource features, the `limit` is the MAX across:
+- All enabled groups providing an override for this feature
+- The base feature's own limit
+
+So a "Pro" plan with `ai-tokens.limit = 50000` lifts the base config's `1000` to `50000` for users in that group, while users not in any group still see the base limit.
+
+#### Catalog integration
+
+`LaravelCatalog\Models\Product` uses `HasFeatureGroups`, so a Stripe Product can be tagged with feature groups directly:
+
+```php
+$product->attachFeatureGroup('pro-plan');
+```
+
+The implication: a user subscribed to that product gets every feature in the group (assuming your subscription resolution layer reads `Product::featureGroups()`).
+
+#### Debugging tools
+
+Two artisan commands make "why is this on/off?" trivial:
+
+```bash
+php artisan fms:groups                          # list all registered groups
+php artisan fms:groups pro-plan                 # inspect one group (resolved features + overrides)
+php artisan fms:resolve 42                      # explain every feature for User #42
+php artisan fms:resolve 42 --feature=use-mcp    # explain a single feature
+php artisan fms:resolve org-7 --type=App\\Models\\Org   # any HasFeatureGroups model
+```
+
+`fms:resolve` walks every feature and reports which source resolved it (gate / registry / group / config / none) plus the structured detail (matching groups, limit overrides, etc.).
 
 ### Using Middleware
 
