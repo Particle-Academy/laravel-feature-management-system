@@ -32,7 +32,7 @@ class FeatureManager implements FeatureManagerInterface
         protected ?FmsFeatureGroupRegistry $groupRegistry = null,
     ) {}
 
-    public function canAccess(string $feature, ?Authenticatable $user = null, mixed $context = null): bool
+    public function canAccess(string $feature, mixed $user = null, mixed $context = null): bool
     {
         $user = $user ?? Auth::user();
 
@@ -68,17 +68,17 @@ class FeatureManager implements FeatureManagerInterface
         return false;
     }
 
-    public function isEnabled(string $feature, ?Authenticatable $user = null, mixed $context = null): bool
+    public function isEnabled(string $feature, mixed $user = null, mixed $context = null): bool
     {
         return $this->canAccess($feature, $user, $context);
     }
 
-    public function hasFeature(string $feature, ?Authenticatable $user = null, mixed $context = null): bool
+    public function hasFeature(string $feature, mixed $user = null, mixed $context = null): bool
     {
         return $this->canAccess($feature, $user, $context);
     }
 
-    public function remaining(string $feature, ?Authenticatable $user = null, mixed $context = null): ?int
+    public function remaining(string $feature, mixed $user = null, mixed $context = null): ?int
     {
         $user = $user ?? Auth::user();
 
@@ -127,7 +127,7 @@ class FeatureManager implements FeatureManagerInterface
         return null;
     }
 
-    public function enabled(?Authenticatable $user = null, mixed $context = null): array
+    public function enabled(mixed $user = null, mixed $context = null): array
     {
         $user = $user ?? Auth::user();
         $enabled = [];
@@ -166,7 +166,7 @@ class FeatureManager implements FeatureManagerInterface
      *
      * @return array{feature:string, source:string, enabled:bool, detail:array<string,mixed>}
      */
-    public function explain(string $feature, ?Authenticatable $user = null, mixed $context = null): array
+    public function explain(string $feature, mixed $user = null, mixed $context = null): array
     {
         $user = $user ?? Auth::user();
 
@@ -249,7 +249,7 @@ class FeatureManager implements FeatureManagerInterface
      *
      * @return array<int,string>
      */
-    public function enabledGroupsFor(?Authenticatable $user = null, mixed $context = null): array
+    public function enabledGroupsFor(mixed $user = null, mixed $context = null): array
     {
         if ($this->groupRegistry === null) {
             return [];
@@ -274,7 +274,7 @@ class FeatureManager implements FeatureManagerInterface
         return array_values(array_unique($keys));
     }
 
-    protected function isEnabledViaGroups(string $feature, ?Authenticatable $user, mixed $context): bool
+    protected function isEnabledViaGroups(string $feature, mixed $user, mixed $context): bool
     {
         return $this->matchingEnabledGroups($feature, $user, $context) !== [];
     }
@@ -284,7 +284,7 @@ class FeatureManager implements FeatureManagerInterface
      *
      * @return array<int,string>
      */
-    protected function matchingEnabledGroups(string $feature, ?Authenticatable $user, mixed $context): array
+    protected function matchingEnabledGroups(string $feature, mixed $user, mixed $context): array
     {
         if ($this->groupRegistry === null) {
             return [];
@@ -303,7 +303,7 @@ class FeatureManager implements FeatureManagerInterface
      * this feature. Returns null if no group provides an override (caller
      * falls back to the registry/config limit).
      */
-    protected function resolveGroupLimitOverride(string $feature, ?Authenticatable $user, mixed $context): ?int
+    protected function resolveGroupLimitOverride(string $feature, mixed $user, mixed $context): ?int
     {
         if ($this->groupRegistry === null) {
             return null;
@@ -348,7 +348,7 @@ class FeatureManager implements FeatureManagerInterface
         return $merged;
     }
 
-    protected function checkDefinition(array $definition, ?Authenticatable $user, mixed $context): bool
+    protected function checkDefinition(array $definition, mixed $user, mixed $context): bool
     {
         if (isset($definition['check']) && is_callable($definition['check'])) {
             return (bool) call_user_func($definition['check'], $user, $context);
@@ -359,7 +359,7 @@ class FeatureManager implements FeatureManagerInterface
         return true;
     }
 
-    protected function evaluateConfigValue(mixed $value, ?Authenticatable $user, mixed $context): bool
+    protected function evaluateConfigValue(mixed $value, mixed $user, mixed $context): bool
     {
         if (is_bool($value)) {
             return $value;
@@ -370,7 +370,7 @@ class FeatureManager implements FeatureManagerInterface
         return false;
     }
 
-    protected function getResourceRemaining(array $definition, string $feature, ?Authenticatable $user, mixed $context): ?int
+    protected function getResourceRemaining(array $definition, string $feature, mixed $user, mixed $context): ?int
     {
         if (isset($definition['remaining']) && is_callable($definition['remaining'])) {
             return call_user_func($definition['remaining'], $feature, $user, $context);
@@ -386,7 +386,7 @@ class FeatureManager implements FeatureManagerInterface
         return max(0, (int) $limit - (int) $usage);
     }
 
-    protected function getResourceUsage(array $definition, string $feature, ?Authenticatable $user, mixed $context): int
+    protected function getResourceUsage(array $definition, string $feature, mixed $user, mixed $context): int
     {
         if (isset($definition['usage']) && is_callable($definition['usage'])) {
             return (int) call_user_func($definition['usage'], $feature, $user, $context);
@@ -402,17 +402,17 @@ class FeatureManager implements FeatureManagerInterface
         return class_exists(\ParticleAcademy\Fms\Models\FeatureUsage::class);
     }
 
-    protected function checkDatabaseFeature(string $feature, ?Authenticatable $user, mixed $context): bool
+    protected function checkDatabaseFeature(string $feature, mixed $user, mixed $context): bool
     {
         return false;
     }
 
-    protected function getDatabaseResourceRemaining(string $feature, ?Authenticatable $user, mixed $context): ?int
+    protected function getDatabaseResourceRemaining(string $feature, mixed $user, mixed $context): ?int
     {
         return null;
     }
 
-    protected function getDatabaseResourceUsage(string $feature, ?Authenticatable $user, mixed $context): int
+    protected function getDatabaseResourceUsage(string $feature, mixed $user, mixed $context): int
     {
         return 0;
     }

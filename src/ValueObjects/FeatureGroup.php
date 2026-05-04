@@ -2,7 +2,6 @@
 
 namespace ParticleAcademy\Fms\ValueObjects;
 
-use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * Feature Group Value Object
@@ -28,7 +27,7 @@ class FeatureGroup
      * @param  array<int,string>  $features  Feature keys included by this group.
      * @param  array<int,string>  $extends  Other group keys whose features (and overrides) merge in. One level only — no transitive expansion.
      * @param  array<string,array<string,mixed>>  $overrides  Per-feature overrides keyed by feature key. Today supports `limit` (max wins). e.g. `['ai-tokens' => ['limit' => 50000]]`
-     * @param  (callable(?Authenticatable,mixed):bool)|bool|null  $enabled  Optional gate. If provided and truthy, the group is considered enabled for the subject regardless of pivot assignment. If omitted, the group is enabled only when explicitly assigned via the pivot.
+     * @param  (callable(mixed,mixed):bool)|bool|null  $enabled  Optional gate. If provided and truthy, the group is considered enabled for the subject regardless of pivot assignment. If omitted, the group is enabled only when explicitly assigned via the pivot.
      */
     public function __construct(
         public readonly string $key,
@@ -59,7 +58,7 @@ class FeatureGroup
     }
 
     /** Whether this group's `enabled` callable resolves true for the subject. */
-    public function isEnabledByCallable(?Authenticatable $user, mixed $context): bool
+    public function isEnabledByCallable(mixed $user, mixed $context): bool
     {
         if ($this->enabled === null) {
             return false;
