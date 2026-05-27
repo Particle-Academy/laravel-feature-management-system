@@ -257,10 +257,54 @@ app(FmsFeatureRegistry::class)->register('custom-feature', [
 
 FMS checks features in this order:
 
+0. **Pre-strategies** (app-registered) - Run before Gate; first non-null verdict wins
 1. **Gates/Policies** - If a Gate exists with the feature name, it's checked first
 2. **Feature Registry** - Checks registered features via `FmsFeatureRegistry`
-3. **Config File** - Checks `config/fms.features.{feature}`
-4. **Database** - If `FeatureUsage` model exists, checks database (extensible)
+3. **Feature Groups** - Any enabled group containing the feature flips it on
+4. **Config File** - Checks `config/fms.features.{feature}`
+5. **Database** - If `FeatureUsage` model exists, checks database (extensible)
+
+### Pre-strategies (v0.6.0+)
+
+When you need an external system — a billing service, a remote
+entitlements provider, a feature flag platform — to be **authoritative**
+about access (even over a Gate), register a *pre-strategy*. Strategies
+receive `(feature, user, context)` and return `?bool`:
+
+- `true` — granted, no further checks
+- `false` — denied, no further checks
+- `null` — "I don't know", fall through to the next strategy / chain
+
+```php
+use ParticleAcademy\Fms\Services\FeatureManager;
+
+// In an app service provider's boot():
+app(FeatureManager::class)->registerPreStrategy('subscription', function ($feature, $user, $context): ?bool {
+    if (! $user) return null;
+    $sub = app(BillingService::class)->subscriptionFor($user);
+    if (! $sub) return null;                       // no subscription -> fall through
+    return $sub->allowsFeature($feature);          // authoritative when subscription exists
+});
+```
+
+Strategies run in registration order, and `explain()` will report
+`source: 'pre-strategy'` with the strategy `name` so devtools can show
+*"blocked by subscription"* etc.
+
+For resource features, register a `?int` counterpart that answers
+`remaining()`:
+
+```php
+app(FeatureManager::class)->registerPreRemainingStrategy('subscription-quota', function ($feature, $user, $context): ?int {
+    $sub = app(BillingService::class)->subscriptionFor($user);
+    return $sub?->remainingFor($feature);          // null falls through
+});
+```
+
+Re-registering the same name replaces the strategy.
+`unregisterPreStrategy('subscription')` and
+`unregisterPreRemainingStrategy('subscription-quota')` undo it
+(useful in tests).
 
 ## Resource Features
 

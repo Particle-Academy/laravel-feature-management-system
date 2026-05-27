@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Gate;
  * Feature Manager Service
  *
  * Resolution order:
+ *   0. Pre-strategies (app-supplied, run in registration order;
+ *      first non-null result wins and is authoritative — used for
+ *      subscription / entitlement integrations that need to short-
+ *      circuit the standard chain). See `registerPreStrategy()`.
  *   1. Gate / Policy
  *   2. Registry (FmsFeatureRegistry)
  *   3. Feature Groups (FmsFeatureGroupRegistry) — OR'd across all
@@ -23,18 +27,109 @@ use Illuminate\Support\Facades\Gate;
  *   5. Database (subclass extension hook)
  *
  * Resource limits aggregate as MAX across all enabled groups containing
- * the feature, then fall back to the feature's own limit.
+ * the feature, then fall back to the feature's own limit. Pre-remaining
+ * strategies (see `registerPreRemainingStrategy()`) get the same
+ * "first non-null wins" treatment for resource lookups.
  */
 class FeatureManager implements FeatureManagerInterface
 {
+    /**
+     * Named pre-strategies for boolean access checks. Run before Gate.
+     * First strategy returning non-null wins and is authoritative.
+     *
+     * @var array<string, callable(string,mixed,mixed):?bool>
+     */
+    protected array $preStrategies = [];
+
+    /**
+     * Named pre-strategies for resource `remaining()` lookups. Same
+     * "first non-null wins" semantics as `$preStrategies`.
+     *
+     * @var array<string, callable(string,mixed,mixed):?int>
+     */
+    protected array $preRemainingStrategies = [];
+
     public function __construct(
         protected FmsFeatureRegistry $registry,
         protected ?FmsFeatureGroupRegistry $groupRegistry = null,
     ) {}
 
+    /**
+     * Register a named pre-strategy that runs before Gate / Registry /
+     * Groups / Config / Database for `canAccess()`. The strategy receives
+     * `(feature, user, context)` and returns `?bool`:
+     *
+     *   - true  → access granted, no further strategies consulted
+     *   - false → access denied, no further strategies consulted
+     *   - null  → "I don't know", fall through to the next strategy
+     *
+     * Strategies run in registration order. Re-registering an existing
+     * `$name` replaces the previous closure.
+     *
+     * Typical use case: layering a subscription / entitlement check via
+     * the app's billing service so paid features can't be granted by
+     * accident through a Registry / Config rule.
+     */
+    public function registerPreStrategy(string $name, callable $strategy): void
+    {
+        $this->preStrategies[$name] = $strategy;
+    }
+
+    /**
+     * Remove a previously-registered boolean pre-strategy. Safe to call
+     * with an unknown `$name` — no-ops if not registered.
+     */
+    public function unregisterPreStrategy(string $name): void
+    {
+        unset($this->preStrategies[$name]);
+    }
+
+    /**
+     * Registered pre-strategy names, in evaluation order. Useful for
+     * introspection (devtools, the `fms:resolve` artisan command).
+     *
+     * @return array<int, string>
+     */
+    public function preStrategyNames(): array
+    {
+        return array_keys($this->preStrategies);
+    }
+
+    /**
+     * Register a named pre-strategy for `remaining()` lookups. Same
+     * semantics as `registerPreStrategy()` but the return type is
+     * `?int` — null means fall through, an integer is authoritative.
+     */
+    public function registerPreRemainingStrategy(string $name, callable $strategy): void
+    {
+        $this->preRemainingStrategies[$name] = $strategy;
+    }
+
+    public function unregisterPreRemainingStrategy(string $name): void
+    {
+        unset($this->preRemainingStrategies[$name]);
+    }
+
+    /** @return array<int, string> */
+    public function preRemainingStrategyNames(): array
+    {
+        return array_keys($this->preRemainingStrategies);
+    }
+
     public function canAccess(string $feature, mixed $user = null, mixed $context = null): bool
     {
         $user = $user ?? Auth::user();
+
+        // Pre-strategies (registration order). First non-null wins; null
+        // means "I don't know" and we fall through. Sits above Gate so a
+        // subscription / entitlement service can be authoritative even
+        // when a stray Gate would otherwise allow.
+        foreach ($this->preStrategies as $strategy) {
+            $verdict = $strategy($feature, $user, $context);
+            if ($verdict !== null) {
+                return (bool) $verdict;
+            }
+        }
 
         // Gate / Policy is the only authoritative override — if defined, its
         // verdict is final (allow OR deny), bypassing other sources entirely.
@@ -81,6 +176,17 @@ class FeatureManager implements FeatureManagerInterface
     public function remaining(string $feature, mixed $user = null, mixed $context = null): ?int
     {
         $user = $user ?? Auth::user();
+
+        // Pre-remaining strategies run first. First non-null wins. Lets
+        // a subscription / quota service answer authoritatively without
+        // forcing every resource feature to model its limits in the
+        // registry/config.
+        foreach ($this->preRemainingStrategies as $strategy) {
+            $verdict = $strategy($feature, $user, $context);
+            if ($verdict !== null) {
+                return max(0, (int) $verdict);
+            }
+        }
 
         // Group-supplied limit (max across enabled groups) takes precedence
         // when a group provides an override, since a paid plan should be
@@ -169,6 +275,21 @@ class FeatureManager implements FeatureManagerInterface
     public function explain(string $feature, mixed $user = null, mixed $context = null): array
     {
         $user = $user ?? Auth::user();
+
+        // Pre-strategies first — they out-rank Gate in canAccess() so the
+        // explanation must reflect that, naming the strategy that
+        // answered so devtools can show "blocked by subscription" etc.
+        foreach ($this->preStrategies as $name => $strategy) {
+            $verdict = $strategy($feature, $user, $context);
+            if ($verdict !== null) {
+                return [
+                    'feature' => $feature,
+                    'source' => 'pre-strategy',
+                    'enabled' => (bool) $verdict,
+                    'detail' => ['name' => $name],
+                ];
+            }
+        }
 
         // Gate is authoritative — return its verdict regardless of value.
         if (Gate::has($feature)) {

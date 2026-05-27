@@ -163,10 +163,45 @@ app(FmsFeatureRegistry::class)->register('custom-feature', [
 
 FMS checks features in this order:
 
+0. **Pre-strategies** - App-registered callbacks that run before Gate; first non-null verdict wins
 1. **Gates/Policies** - If a Gate exists with the feature name, it's checked first
 2. **Feature Registry** - Checks registered features via `FmsFeatureRegistry`
-3. **Config File** - Checks `config/fms.features.{feature}`
-4. **Database** - If `FeatureUsage` model exists, checks database (extensible)
+3. **Feature Groups** - Any enabled group containing the feature flips it on
+4. **Config File** - Checks `config/fms.features.{feature}`
+5. **Database** - If `FeatureUsage` model exists, checks database (extensible)
+
+### Pre-strategies (v0.6.0+)
+
+Register a callback to make an external system (billing, entitlements,
+flag platform) **authoritative** over Gate. Return `?bool`:
+
+- `true` — granted
+- `false` — denied
+- `null` — fall through to the next strategy / standard chain
+
+@verbatim
+<code-snippet name="FMS Pre-strategy (subscription example)" lang="php">
+use ParticleAcademy\Fms\Services\FeatureManager;
+
+// In an app service provider's boot():
+app(FeatureManager::class)->registerPreStrategy('subscription', function ($feature, $user, $context): ?bool {
+    if (! $user) return null;
+    $sub = app(BillingService::class)->subscriptionFor($user);
+    if (! $sub) return null;                       // no subscription -> fall through
+    return $sub->allowsFeature($feature);          // authoritative when subscription exists
+});
+
+// For resource features:
+app(FeatureManager::class)->registerPreRemainingStrategy('subscription-quota', function ($feature, $user, $context): ?int {
+    return app(BillingService::class)->subscriptionFor($user)?->remainingFor($feature);
+});
+</code-snippet>
+@endverbatim
+
+Strategies run in registration order. Re-registering the same `$name`
+replaces it. `unregisterPreStrategy($name)` / `unregisterPreRemainingStrategy($name)`
+undo it (useful in tests). `explain()` reports `source: 'pre-strategy'`
+with the strategy `name` so devtools can show *"blocked by subscription"* etc.
 
 ### Resource Features
 
