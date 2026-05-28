@@ -218,6 +218,28 @@ Resource features support metered usage:
 </code-snippet>
 @endverbatim
 
+### Custom Table Names (v0.7.0+)
+
+The `feature_usages` table and its two FK target tables are config-driven.
+Override in `config/fms.php` when your schema differs (prefixed tables,
+a non-standard subscription table, or laravel-catalog's
+`catalog_product_features`):
+
+@verbatim
+<code-snippet name="FMS Custom Table Names" lang="php">
+'tables' => [
+    'feature_usages'   => 'fms_feature_usages',
+    'subscriptions'    => 'subscriptions',
+    'product_features' => 'catalog_product_features',
+],
+</code-snippet>
+@endverbatim
+
+The `FeatureUsage` model's `getTable()` and the create migration both read
+these. The migration self-skips (no error) when the usages table already
+exists OR when an FK target table is missing at apply time — so it can sit
+early in chronological migration order without breaking a fresh migrate.
+
 ### Best Practices
 
 - Always check feature access before allowing actions that require features
@@ -226,3 +248,4 @@ Resource features support metered usage:
 - Use resource features for metered/usage-based features
 - Register features programmatically when they need to be dynamic
 - Keep feature definitions in config for static features
+- Override `fms.tables.*` instead of forking the package when your schema differs

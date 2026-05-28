@@ -11,7 +11,8 @@ A standalone Laravel package for flexible feature access control and management.
 - **Middleware Protection**: Protect routes based on feature access
 - **Facade & Helpers**: Clean API via facade and global helper functions
 - **Standalone Package**: Zero dependencies on other packages
-- **Laravel 12 Compatible**: Built for Laravel 11+ and 12+
+- **Configurable schema**: Override the `feature_usages` / `subscriptions` / `product_features` table names without forking
+- **Laravel 13 Compatible**: Built for Laravel 11+, 12+, and 13+
 
 ## Installation
 
@@ -319,10 +320,40 @@ Resource features support metered usage:
 ],
 ```
 
+## Custom table names (v0.7.0+)
+
+The `feature_usages` table and the two tables its foreign keys point at
+are config-driven, so you don't have to fork the package or hand-edit a
+published migration when your schema differs. Override any of them in
+`config/fms.php`:
+
+```php
+'tables' => [
+    'feature_usages'   => 'fms_feature_usages',        // prefixed schema
+    'subscriptions'    => 'subscriptions',             // your billing table
+    'product_features' => 'catalog_product_features',  // laravel-catalog's table
+],
+```
+
+Both the `FeatureUsage` model (`getTable()`) and the create migration
+read these values, so model and schema stay in sync from one change.
+
+The create migration also **self-skips** (no error) when:
+
+- the `feature_usages` table already exists (e.g. created by an older
+  fork under a different name), or
+- either FK target table (`subscriptions` / `product_features`) is
+  missing at apply time.
+
+The second guard means the migration can sit harmlessly early in your
+chronological migration order — if your subscription / product-feature
+tables are created later, FMS just defers, and you can build the real
+usages table in your own migration if you prefer.
+
 ## Requirements
 
 - PHP 8.2+
-- Laravel 11+ or 12+
+- Laravel 11+, 12+, or 13+
 
 ## Testing
 

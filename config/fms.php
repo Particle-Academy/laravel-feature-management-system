@@ -156,5 +156,32 @@ return [
     |
     */
     'product_feature_model' => null, // Set to your ProductFeature model class
+
+    /*
+    |--------------------------------------------------------------------------
+    | Table Names
+    |--------------------------------------------------------------------------
+    |
+    | FMS's own `feature_usages` table plus the two tables its foreign keys
+    | point at. Override these when your schema differs — e.g. you prefix
+    | tables (`fms_feature_usages`), use a non-standard subscription table,
+    | or run particle-academy/laravel-catalog (which writes to
+    | `catalog_product_features`, not `product_features`).
+    |
+    | Both the FeatureUsage model and the create-table migration read these
+    | values, so a single config change keeps the model and schema in sync
+    | without forking the package or hand-editing a published migration.
+    |
+    | The create migration also self-skips (no error) when either FK target
+    | table is absent at apply time, so it can sit harmlessly in early
+    | migration order while you build the real table later in your own
+    | migration if you prefer.
+    |
+    */
+    'tables' => [
+        'feature_usages' => 'feature_usages',
+        'subscriptions' => 'subscriptions',
+        'product_features' => 'product_features',
+    ],
 ];
 

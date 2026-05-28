@@ -17,9 +17,16 @@ class FeatureUsage extends Model
     use HasFactory, HasUlids;
 
     /**
-     * The table associated with the model.
+     * Resolve the table name from config so consumers with prefixed or
+     * renamed schemas (e.g. `fms_feature_usages`) don't have to decorate
+     * the model. Falls back to the historical default.
      */
-    protected $table = 'feature_usages';
+    public function getTable(): string
+    {
+        // ?? (not the config default arg) so an explicit null in config
+        // still falls back rather than returning null.
+        return config('fms.tables.feature_usages') ?? 'feature_usages';
+    }
 
     protected $fillable = [
         'subscription_id',
