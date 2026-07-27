@@ -494,7 +494,7 @@ class FeatureManager implements FeatureManagerInterface
     protected function getResourceRemaining(array $definition, string $feature, mixed $user, mixed $context): ?int
     {
         if (isset($definition['remaining']) && is_callable($definition['remaining'])) {
-            return call_user_func($definition['remaining'], $feature, $user, $context);
+            return $this->callDefinitionCallback($definition['remaining'], $feature, $user, $context);
         }
         $limit = $definition['limit'] ?? config("fms.features.{$feature}.limit", null);
         if (is_callable($limit)) {
@@ -510,12 +510,70 @@ class FeatureManager implements FeatureManagerInterface
     protected function getResourceUsage(array $definition, string $feature, mixed $user, mixed $context): int
     {
         if (isset($definition['usage']) && is_callable($definition['usage'])) {
-            return (int) call_user_func($definition['usage'], $feature, $user, $context);
+            return (int) $this->callDefinitionCallback($definition['usage'], $feature, $user, $context);
         }
         if ($this->hasDatabaseSupport()) {
             return $this->getDatabaseResourceUsage($feature, $user, $context);
         }
         return 0;
+    }
+
+    /**
+     * Invoke a feature-definition callback as `($user, $context)`.
+     *
+     * That is the convention everywhere else in this class — `check`, `enabled`
+     * and `limit` all receive `($user, $context)` — and it is what the README
+     * has always documented. `usage` and `remaining` were the two outliers,
+     * invoked as `($feature, $user, $context)` with the key FIRST, so anyone
+     * following the docs bound `$user` to a string and measured the wrong
+     * thing. Reported by GuardCard.net, whose allowance never ran out.
+     *
+     * `$feature` is redundant in the first place: the callback is defined inside
+     * `features.<key>`, so the key is already known where it is written.
+     *
+     * ## The three-parameter escape hatch
+     *
+     * A callback declaring three parameters was written against the old order
+     * — deliberately, by someone who read the source rather than the docs, since
+     * the docs never described it. Passing it two arguments would not fail; it
+     * would shift every argument by one and keep returning numbers, which is the
+     * silent-wrong-answer this fix exists to end. So arity picks the order, and
+     * the legacy shape is deprecated out loud rather than broken quietly.
+     *
+     * Remove at 1.0.
+     */
+    protected function callDefinitionCallback(callable $callback, string $feature, mixed $user, mixed $context): mixed
+    {
+        if ($this->callbackArity($callback) === 3) {
+            trigger_error(
+                "FMS: the `{$feature}` usage/remaining callback takes three parameters, which is the pre-0.8 "
+                .'`($feature, $user, $context)` order. Change it to `($user, $context)` — the feature key is '
+                .'already known where the callback is defined. Support for the old order is removed at 1.0.',
+                E_USER_DEPRECATED,
+            );
+
+            return call_user_func($callback, $feature, $user, $context);
+        }
+
+        return call_user_func($callback, $user, $context);
+    }
+
+    /** Declared parameter count, or null when it cannot be determined. */
+    protected function callbackArity(callable $callback): ?int
+    {
+        try {
+            $reflection = is_array($callback)
+                ? new \ReflectionMethod($callback[0], $callback[1])
+                : new \ReflectionFunction(\Closure::fromCallable($callback));
+
+            return $reflection->getNumberOfParameters();
+        } catch (\ReflectionException) {
+            // An uninspectable callable (some invokable internals) gets the
+            // documented signature rather than an exception — guessing the
+            // legacy order for something we cannot read would reintroduce the
+            // bug for the one case we know least about.
+            return null;
+        }
     }
 
     protected function hasDatabaseSupport(): bool

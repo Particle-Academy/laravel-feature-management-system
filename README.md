@@ -50,8 +50,8 @@ return [
             'name' => 'AI Tokens',
             'description' => 'Metered AI token usage per billing period.',
             'type' => 'resource',
-            'limit' => 10000, // or callable
-            'usage' => fn($user) => $user->getTokenUsage(), // optional
+            'limit' => 10000, // or callable: fn($user, $context) => ...
+            'usage' => fn($user, $context) => $user->getTokenUsage(), // optional
         ],
     ],
 ];
@@ -317,10 +317,21 @@ Resource features support metered usage:
 'api-calls' => [
     'type' => 'resource',
     'limit' => 1000,
-    'usage' => fn($user) => $user->apiCalls()->thisMonth()->count(),
-    'remaining' => fn($user) => 1000 - $user->apiCalls()->thisMonth()->count(), // optional
+    'usage' => fn($user, $context) => $user->apiCalls()->thisMonth()->count(),
+    'remaining' => fn($user, $context) => 1000 - $user->apiCalls()->thisMonth()->count(), // optional
 ],
 ```
+
+**Every definition callback receives `($user, $context)`** — `check`, `enabled`,
+`limit`, `usage` and `remaining` alike. The feature key is not passed, because
+the callback is defined inside `features.<key>` and the key is already known
+where you write it.
+
+> **Changed in 0.8.0.** `usage` and `remaining` used to receive
+> `($feature, $user, $context)`, with the key first, which never matched these
+> docs. A callback **declaring three parameters** still gets the old order and
+> raises a deprecation, so nothing breaks silently — but move it to
+> `($user, $context)`; the old order goes away at 1.0.
 
 ## Custom table names (v0.7.0+)
 
