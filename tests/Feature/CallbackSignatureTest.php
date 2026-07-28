@@ -142,3 +142,75 @@ it('does not deprecate a callback that takes fewer arguments than it is given', 
 
     expect($deprecation)->toBeNull();
 });
+
+/**
+ * The cache-safe callable form works, and gets the same signature.
+ *
+ * `config/fms.php` cannot hold a closure: Laravel serialises cached config with
+ * `var_export`, which emits `\Closure::__set_state(...)` — a method Closure does
+ * not have — so one closure anywhere in the file fails `php artisan config:cache`,
+ * and that is part of `optimize` and standard in production deploys.
+ *
+ * The documented escape is a `[Class::class, 'method']` callable: an array of
+ * strings, so it survives `var_export`, and still callable. Nothing tested it,
+ * which matters now that the docs steer people to it — including the arity
+ * detection added in 0.8.0, which has a separate ReflectionMethod branch for
+ * array callables that no test exercised.
+ */
+class CacheSafeUsage
+{
+    public static function forUser(mixed $user, mixed $context = null): int
+    {
+        return 30;
+    }
+
+    /** The pre-0.8.0 order, to prove the deprecation path covers arrays too. */
+    public static function legacy(string $feature, mixed $user, mixed $context = null): int
+    {
+        return $feature === 'tokens' ? 30 : 0;
+    }
+}
+
+it('accepts a [Class::class, method] callable, the form config:cache allows', function () {
+    config(['fms.features.tokens' => [
+        'type' => 'resource',
+        'limit' => 100,
+        'usage' => [CacheSafeUsage::class, 'forUser'],
+    ]]);
+
+    expect(app(FeatureManagerInterface::class)->remaining('tokens', 'the-user'))->toBe(70);
+});
+
+it('survives var_export, which is what config:cache actually does', function () {
+    // The mechanism, not a proxy for it: a closure emits a __set_state call
+    // that fatals on load; an array callable round-trips.
+    $exported = var_export([CacheSafeUsage::class, 'forUser'], true);
+
+    expect($exported)->not->toContain('__set_state');
+    expect(eval("return {$exported};"))->toBe([CacheSafeUsage::class, 'forUser']);
+});
+
+it('detects arity on an array callable, not just a closure', function () {
+    // 0.8.0's shim reflects arrays through ReflectionMethod. If that branch
+    // were wrong, a three-parameter METHOD would silently get the new order and
+    // meter the wrong thing — the exact bug, wearing a different hat.
+    $deprecation = null;
+    set_error_handler(function (int $level, string $message) use (&$deprecation) {
+        $deprecation = $message;
+
+        return true;
+    }, E_USER_DEPRECATED);
+
+    config(['fms.features.tokens' => [
+        'type' => 'resource',
+        'limit' => 100,
+        'usage' => [CacheSafeUsage::class, 'legacy'],
+    ]]);
+
+    $remaining = app(FeatureManagerInterface::class)->remaining('tokens', 'the-user');
+
+    restore_error_handler();
+
+    expect($remaining)->toBe(70);
+    expect($deprecation)->toContain('($user, $context)');
+});
