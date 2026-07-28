@@ -13,6 +13,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Documented that a closure in `config/fms.php` breaks `php artisan config:cache`.**
+  Laravel serialises cached config with `var_export`, which cannot export a
+  `Closure`, so one closure anywhere in the file fails the whole command:
+
+  ```
+  LogicException: Your configuration files could not be serialized because the
+  value at "fms.features.ai-tokens.usage" is non-serializable.
+    Error: Call to undefined method Closure::__set_state()
+  ```
+
+  Every documented pattern — README examples and the commented examples in the
+  published config stub — used closures, and `config:cache` is part of
+  `optimize` and standard in production deploys. So an app following the docs
+  worked in development and failed at deploy, with an error naming Laravel's
+  config layer rather than anything recognisable as FMS.
+
+  Nothing in the package changes. The new "Callables and `config:cache`" section
+  documents the two forms that survive caching: a `[Class::class, 'method']`
+  callable (serialisable *and* callable), or runtime registration through
+  `FmsFeatureRegistry`, where closures are fine because nothing is serialised.
+  The config stub now carries the same warning at the point of copy-paste.
+
+  Also corrected `'usage' => fn($user) => …` in the stub's examples to
+  `fn($user, $context)`, matching the signature documented directly above it and
+  fixed in 0.8.0.
+
 ## [0.8.0] — 2026-07-27
 
 ### Fixed

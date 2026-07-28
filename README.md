@@ -57,6 +57,60 @@ return [
 ];
 ```
 
+### Callables and `config:cache`
+
+> **A closure in `config/fms.php` breaks `php artisan config:cache`.** Laravel
+> serialises cached config with `var_export`, which cannot export a `Closure`.
+> One closure anywhere in the file fails the whole command:
+>
+> ```
+> LogicException: Your configuration files could not be serialized because the
+> value at "fms.features.ai-tokens.usage" is non-serializable.
+>   Error: Call to undefined method Closure::__set_state()
+> ```
+>
+> `config:cache` is part of `php artisan optimize` and standard in production
+> deploys, so this surfaces at deploy time rather than in development.
+
+The examples above use closures for brevity. If you cache config — and you
+probably should — use one of these instead.
+
+**Option 1: a `[Class::class, 'method']` callable.** Serialisable *and*
+callable, so it works cached and uncached, and it keeps the logic testable:
+
+```php
+// app/Features/TokenUsage.php
+class TokenUsage
+{
+    public static function count($user = null, $context = null): int
+    {
+        return $user?->getTokenUsage() ?? 0;
+    }
+}
+
+// config/fms.php
+'ai-tokens' => [
+    'type'  => 'resource',
+    'limit' => 10000,
+    'usage' => [\App\Features\TokenUsage::class, 'count'],   // not a closure
+],
+```
+
+**Option 2: register at runtime**, where closures are fine because nothing is
+serialised — see [Feature Registry](#feature-registry):
+
+```php
+// A service provider's boot()
+app(FmsFeatureRegistry::class)->register('ai-tokens', [
+    'type'  => 'resource',
+    'limit' => 10000,
+    'usage' => fn ($user, $context) => $user->getTokenUsage(),
+]);
+```
+
+Config values that are plain data — `enabled => true`, `limit => 10000`, group
+definitions without a callable `enabled` — cache fine and need no change.
+
 ## Usage
 
 ### Using the Facade
