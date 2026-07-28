@@ -18,6 +18,24 @@ return [
     | - 'usage': callable - For resource features, get current usage(user, context) => int
     | - 'remaining': callable - For resource features, get remaining(user, context) => int|null
     |
+    | !! A CLOSURE HERE BREAKS `php artisan config:cache` !!
+    |
+    | Laravel serialises cached config with var_export, which cannot export a
+    | Closure -- one closure anywhere in this file fails the whole command, and
+    | config:cache is part of `optimize` and standard in production deploys.
+    | So it breaks at deploy time, not in development.
+    |
+    | Use a [Class::class, 'method'] callable instead -- serialisable AND
+    | callable:
+    |
+    |    'usage' => [\App\Features\TokenUsage::class, 'count'],
+    |
+    | Or register the feature at runtime via FmsFeatureRegistry, where closures
+    | are fine because nothing is serialised. See the README.
+    |
+    | The closures below are illustrative shorthand; they are safe only if you
+    | never cache config.
+    |
     | Access Control Strategies:
     |
     | 1. Simple Boolean:
@@ -30,7 +48,7 @@ return [
     |    'feature-name' => [
     |        'type' => 'resource',
     |        'limit' => 1000,
-    |        'usage' => fn($user) => $user->getUsageCount()
+    |        'usage' => fn($user, $context) => $user->getUsageCount()
     |    ]
     |
     | 4. Gate/Policy:
