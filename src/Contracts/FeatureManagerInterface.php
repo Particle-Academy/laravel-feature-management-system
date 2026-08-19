@@ -29,6 +29,32 @@ interface FeatureManagerInterface
     public function hasFeature(string $feature, mixed $subject = null, mixed $context = null): bool;
 
     /**
+     * An explicit alias for canAccess, added in 0.11.0.
+     *
+     * `canAccess` answers ENTITLEMENT: whether the feature is granted, without
+     * regard to remaining quota. This name says so at the call site, so nobody
+     * has to re-read the implementation to find out which of the two questions
+     * was being asked.
+     */
+    public function isEntitled(string $feature, mixed $subject = null, mixed $context = null): bool;
+
+    /**
+     * Entitled AND `$amount` fits in the remaining quota — the quota-aware read.
+     *
+     * A READ, not a gate: between this and the write that follows, another
+     * request can spend the last unit. The subscription-scoped `Fms` service has
+     * `tryIncrement()` for that; this class owns no storage and cannot.
+     *
+     * Unlimited (`remaining()` returning null) always allows.
+     */
+    public function canConsume(
+        string $feature,
+        mixed $subject = null,
+        int $amount = 1,
+        mixed $context = null,
+    ): bool;
+
+    /**
      * Get the remaining quantity for a resource-based feature.
      *
      * @return int|null Returns null if feature doesn't exist or isn't a resource feature

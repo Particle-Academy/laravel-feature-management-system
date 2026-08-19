@@ -143,6 +143,30 @@ if ($remaining > 0) {
 $enabled = FMS::enabled($user);
 ```
 
+### Entitlement is not quota
+
+**`canAccess()` answers ENTITLEMENT**: is this feature granted to the subject,
+regardless of how much of the allowance is left. A metered feature whose quota is
+exhausted is still entitled — the customer is still paying for it — so hiding it
+at the moment they are spending most would be the opposite of useful.
+
+```php
+FMS::canAccess('ai-tokens', $user);   // entitled? (quota-blind)
+FMS::isEntitled('ai-tokens', $user);  // the same question, said out loud
+FMS::canConsume('ai-tokens', $user, 10); // entitled AND 10 units fit
+```
+
+`canConsume()` is a **read**. Between it and the write that follows, another
+request can take the last unit. For a metered feature backed by a subscription,
+gate the write with `Fms::tryIncrement()` — it takes a row lock and is the only
+variant that is not racy.
+
+Before 0.11.0 the answer depended on where the feature was defined: registry and
+config features were quota-blind, while a catalog-backed one was on only while
+quota remained. **If you were using a quota-flavoured `canAccess()` /
+`Fms::can()` as a consumption gate, move to `canConsume()` or `tryIncrement()`** —
+see the 0.11.0 CHANGELOG entry.
+
 ### Using Helper Functions
 
 ```php
@@ -387,6 +411,55 @@ where you write it.
 > raises a deprecation, so nothing breaks silently — but move it to
 > `($user, $context)`; the old order goes away at 1.0.
 
+## Billable overage (v0.11.0+)
+
+For a subscription-backed feature, `product_feature_configs.overage_limit` is a
+**ceiling on billable consumption past the included quantity**:
+
+| `overage_limit` | Meaning |
+|---|---|
+| `null` | **No overage.** Consumption stops at `included_quantity`. |
+| `0` | The same, stated explicitly. |
+| `n > 0` | Up to `n` billable units past `included_quantity`; refused beyond. |
+
+The column has existed since the first release and was read by nothing until
+0.11.0 — in PHP, in Node or in Python. `null` means *no overage* precisely
+because of that: every row written before 0.11.0 is either null or a number
+somebody typed hoping it would work, so reading null as "unbounded" would turn
+each untouched row into an unlimited spending authority.
+
+```php
+$fms = app(\ParticleAcademy\Fms\Services\Fms::class);
+
+// included 1000, overage_limit 200 => the ceiling is 1200.
+$fms->tryIncrement('ai-tokens', 50, $subscription);   // records the billable share
+$fms->overage('ai-tokens', $subscription);            // billable units this period
+```
+
+Overage is **recorded**, not derived, in `feature_usages.overage_quantity`.
+`max(0, used - included)` at read time is one column cheaper and quietly wrong:
+a mid-period plan upgrade raises the included quantity and erases overage that
+was genuinely incurred — possibly after it was already reported to a billing
+provider. It resets with the billing period for free, because it lives on the
+per-period row.
+
+**Recording is in scope; invoicing is not.** Listen for
+`ParticleAcademy\Fms\Events\FeatureOverageRecorded` and do the last hop
+yourself:
+
+```php
+Event::listen(FeatureOverageRecorded::class, function ($event) {
+    // $event->units       billable units from THIS consumption
+    // $event->totalUnits  running total for the period
+    // $event->subscription, $event->featureKey, $event->periodStart/End
+});
+```
+
+Reporting metered usage to Stripe needs the *subscription item* id — the thing
+that maps a subscription to one specific price — which this package does not
+have, should not look up, and cannot know at all for an app metering something
+Stripe never bills for.
+
 ## Custom table names (v0.7.0+)
 
 The `feature_usages` table and the two tables its foreign keys point at
@@ -404,6 +477,28 @@ published migration when your schema differs. Override any of them in
 
 Both the `FeatureUsage` model (`getTable()`) and the create migration
 read these values, so model and schema stay in sync from one change.
+
+### The subscription key type (v0.11.0+)
+
+`feature_usages.subscription_id` was a bigint, which assumed your subscriptions
+are auto-incrementing. `particle-academy/laravel-catalog` — the package FMS is
+paired with — is ULIDs throughout, so in a ULID-native app the create migration
+did not degrade, it **failed**: a bigint foreign key cannot reference a
+`char(26)` primary key.
+
+```php
+'subscription_key_type' => 'ulid',  // null = detect; 'bigint' | 'ulid' | 'uuid' | 'string'
+'subscription_key' => 'id',         // the referenced column
+```
+
+Leave it null to detect the type from your subscriptions table — but **set it
+explicitly if you can**. SQLite reports every string column as a bare `varchar`
+with no length, so detection there can only tell an integer from a string.
+
+**Existing installs need to change nothing.** If your `feature_usages` table
+exists with a bigint `subscription_id`, your subscriptions table is bigint too —
+it has to be, or the original foreign key would never have been created — so
+detection agrees and the reconcile migration is a no-op.
 
 The create migration also **self-skips** (no error) when:
 

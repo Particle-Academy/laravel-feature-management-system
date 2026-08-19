@@ -148,18 +148,36 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Default Strategy
+    | Resolution Order
     |--------------------------------------------------------------------------
     |
     | The order in which feature access checks are performed:
-    | 1. Gate/Policy checks (if defined)
-    | 2. Registry definitions (from FmsFeatureRegistry)
-    | 3. Feature Group resolution (any enabled group containing the feature)
-    | 4. Config file definitions (this file)
-    | 5. Database lookups (if FeatureUsage model is available)
+    | 1. Pre-strategies registered with FeatureManager::registerPreStrategy()
+    | 2. Gate/Policy checks (if defined)
+    | 3. Registry definitions (from FmsFeatureRegistry)
+    | 4. Feature Group resolution (any enabled group containing the feature)
+    | 5. Config file definitions (this file)
+    |
+    | That is the whole chain. Until 0.11.0 a sixth step was advertised here -- a
+    | database resolution strategy -- along with a `default_strategy` key that
+    | could be set to `'database'`. Neither existed:
+    | FeatureManager's three database methods return false, null and 0, and
+    | `default_strategy` was read by no code in this package. Setting it did
+    | nothing, which is worse than it not being offered.
+    |
+    | The three methods survive as `protected` SUBCLASS EXTENSION HOOKS -- if you
+    | extend FeatureManager and override checkDatabaseFeature(), it is called and
+    | its answer is used. What was deleted is the claim that the package resolves
+    | from the database by itself.
+    |
+    | For a real integration, reach for one of the two extension points that do
+    | something: registerPreStrategy() (authoritative, runs first), or the
+    | catalog bridge in particle-academy/laravel-catalog.
+    |
+    | Removing `default_strategy` changes nothing at runtime. If you published
+    | this config file, the stale key in your copy is equally harmless.
     |
     */
-    'default_strategy' => 'config', // 'config', 'database', 'gate', 'registry'
 
     /*
     |--------------------------------------------------------------------------
@@ -182,6 +200,36 @@ return [
      */
     'subscription_model' => null, // Set to your billing subscription model class
     'user_model' => null,         // Set to your user model class
+
+    /*
+    |--------------------------------------------------------------------------
+    | Subscription Key
+    |--------------------------------------------------------------------------
+    |
+    | The type and name of your subscriptions table's primary key, which
+    | `feature_usages.subscription_id` has to match.
+    |
+    | This package declared a bigint until 0.11.0, while the package it is paired
+    | with (particle-academy/laravel-catalog) is ULIDs throughout -- so the two
+    | halves of one feature disagreed about the type of the key that joins them.
+    | In a ULID-native app the create migration did not degrade, it FAILED: a
+    | bigint foreign key cannot reference a char(26) primary key. Subscriptions
+    | belong to your application, so the package stops assuming.
+    |
+    | `subscription_key_type`: 'bigint', 'ulid', 'uuid' or 'string'. Leave null
+    | to detect it from the referenced table -- but SET IT EXPLICITLY if you can.
+    | SQLite reports every string column as a bare `varchar` with no length, so
+    | detection there can only tell an integer from a string; MySQL, which is the
+    | driver that rejects a mismatched foreign key, reports enough.
+    |
+    | Existing installs need to change nothing: if your feature_usages table
+    | exists with a bigint subscription_id, your subscriptions table is bigint
+    | too -- it has to be, or the original foreign key would never have been
+    | created -- so detection agrees and the reconcile migration is a no-op.
+    |
+    */
+    'subscription_key_type' => null, // null = detect; 'bigint' | 'ulid' | 'uuid' | 'string'
+    'subscription_key' => 'id',      // the referenced column on the subscriptions table
 
     /*
     |--------------------------------------------------------------------------

@@ -24,7 +24,27 @@ use Illuminate\Support\Facades\Gate;
  *   3. Feature Groups (FmsFeatureGroupRegistry) — OR'd across all
  *      groups enabled for the subject (via pivot or callable gate)
  *   4. Config (config/fms.php features.{key}.enabled)
- *   5. Database (subclass extension hook)
+ *   5. A SUBCLASS EXTENSION HOOK — `checkDatabaseFeature()`. This package's
+ *      own implementation always declines, so nothing resolves from the
+ *      database out of the box.
+ *
+ * Step 5 was documented as "Database lookups" until 0.11.0, which described a
+ * resolution strategy that does not exist: `checkDatabaseFeature()`,
+ * `getDatabaseResourceRemaining()` and `getDatabaseResourceUsage()` return
+ * `false`, `null` and `0`. They are legitimate `protected` extension points — a
+ * subclass overriding one gets a working hook, which is why they are still
+ * called — but a reader configuring `'default_strategy' => 'database'` got
+ * nothing at all, and `default_strategy` was itself read by no code in the
+ * package. The claim is gone; the hooks stay. Implementing a real database step
+ * would change resolution order for every existing app to serve nobody who
+ * asked, and the extension point that DOES something already exists twice over
+ * (`registerPreStrategy()` here, `FeatureSource` in the Node and Python twins).
+ *
+ * `canAccess()` answers ENTITLEMENT and has always done so here: a resource
+ * feature is on when its `enabled`/`check` says so, whatever `remaining()`
+ * reports. `canConsume()` is the quota-aware read. The subscription-scoped
+ * `Fms` service used to answer the OTHER question under the name `can()`; from
+ * 0.11.0 the two agree.
  *
  * Resource limits aggregate as MAX across all enabled groups containing
  * the feature, then fall back to the feature's own limit. Pre-remaining
@@ -171,6 +191,49 @@ class FeatureManager implements FeatureManagerInterface
     public function hasFeature(string $feature, mixed $user = null, mixed $context = null): bool
     {
         return $this->canAccess($feature, $user, $context);
+    }
+
+    /**
+     * An explicit alias for `canAccess()`.
+     *
+     * `canAccess` answers entitlement — is this feature granted — regardless of
+     * remaining quota. Nothing about the name says which of the two questions it
+     * is, and the answer used to depend on which layer a feature was defined in,
+     * so this name exists for a call site that means entitlement and wants to
+     * say so.
+     */
+    public function isEntitled(string $feature, mixed $user = null, mixed $context = null): bool
+    {
+        return $this->canAccess($feature, $user, $context);
+    }
+
+    /**
+     * Entitled AND `$amount` fits in the remaining quota.
+     *
+     * The quota-aware read, for a caller that wants what `canAccess()` used to
+     * answer for a catalog-sourced resource feature. `null` remaining is
+     * unlimited and always allows.
+     *
+     * **This is a READ, not a gate.** Between it and the write that follows,
+     * another request can spend the last unit. This class owns no storage, so it
+     * cannot close that window; `Fms::tryIncrement()` takes a row lock and can.
+     */
+    public function canConsume(
+        string $feature,
+        mixed $user = null,
+        int $amount = 1,
+        mixed $context = null,
+    ): bool {
+        $user = $user ?? Auth::user();
+
+        if (! $this->canAccess($feature, $user, $context)) {
+            return false;
+        }
+
+        $remaining = $this->remaining($feature, $user, $context);
+
+        // Not a resource feature, or unlimited: entitlement is the whole answer.
+        return $remaining === null || $remaining >= $amount;
     }
 
     public function remaining(string $feature, mixed $user = null, mixed $context = null): ?int
@@ -576,21 +639,38 @@ class FeatureManager implements FeatureManagerInterface
         }
     }
 
+    /**
+     * Always true: `FeatureUsage` ships inside this package, so the class always
+     * exists. That is harmless — the three hooks below decline by default, so
+     * "has database support" gates nothing — and it is left alone because a
+     * subclass may override it to switch its own hooks off.
+     */
     protected function hasDatabaseSupport(): bool
     {
         return class_exists(\ParticleAcademy\Fms\Models\FeatureUsage::class);
     }
 
+    /**
+     * Subclass extension hook — NOT a database resolution strategy.
+     *
+     * This package declines. It is the terminal `return` of `canAccess()`, so a
+     * subclass overriding it gets a working last-resort source. The call sites
+     * are kept for exactly that reason; what was removed in 0.11.0 is the
+     * config file's claim that the package resolves features from the database
+     * on its own, which it never did.
+     */
     protected function checkDatabaseFeature(string $feature, mixed $user, mixed $context): bool
     {
         return false;
     }
 
+    /** Subclass extension hook. Declines; see `checkDatabaseFeature()`. */
     protected function getDatabaseResourceRemaining(string $feature, mixed $user, mixed $context): ?int
     {
         return null;
     }
 
+    /** Subclass extension hook. Declines; see `checkDatabaseFeature()`. */
     protected function getDatabaseResourceUsage(string $feature, mixed $user, mixed $context): int
     {
         return 0;

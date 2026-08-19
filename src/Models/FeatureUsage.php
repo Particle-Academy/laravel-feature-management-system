@@ -32,6 +32,7 @@ class FeatureUsage extends Model
         'subscription_id',
         'product_feature_id',
         'used_quantity',
+        'overage_quantity',
         'period_start',
         'period_end',
     ];
@@ -40,6 +41,7 @@ class FeatureUsage extends Model
     {
         return [
             'used_quantity' => 'integer',
+            'overage_quantity' => 'integer',
             'period_start' => 'datetime',
             'period_end' => 'datetime',
         ];
@@ -47,12 +49,26 @@ class FeatureUsage extends Model
 
     /**
      * Subscription this usage belongs to.
-     * NOTE: Update the BillingSubscription class reference to match your application
+     *
+     * The class comes from `fms.subscription_model`, like every other model this
+     * package touches. It was a literal `App\Models\BillingSubscription` with a
+     * comment telling the reader to replace it — an instruction nobody can
+     * follow, because by then the file is in `vendor/`. In any app without that
+     * exact class the relationship named a class that does not exist and threw
+     * on first access.
      */
     public function subscription(): BelongsTo
     {
-        // Replace 'App\\Models\\BillingSubscription' with your subscription model class
-        return $this->belongsTo('App\\Models\\BillingSubscription', 'subscription_id');
+        $subscriptionClass = config('fms.subscription_model');
+
+        if (! $subscriptionClass || ! class_exists($subscriptionClass)) {
+            throw new \RuntimeException(
+                'FMS subscription_model is not configured. Set config("fms.subscription_model") '
+                .'to your billing subscription model class.'
+            );
+        }
+
+        return $this->belongsTo($subscriptionClass, 'subscription_id');
     }
 
     /**
