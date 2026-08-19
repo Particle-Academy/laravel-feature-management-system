@@ -176,6 +176,14 @@ return [
     'product_feature_model' => null, // Set to your ProductFeature model class
 
     /*
+     * The subscription and user models this package resolves scope against.
+     * Both were hard-coded to the consuming application's own classes until
+     * 0.9.0, which meant the package only worked in one application.
+     */
+    'subscription_model' => null, // Set to your billing subscription model class
+    'user_model' => null,         // Set to your user model class
+
+    /*
     |--------------------------------------------------------------------------
     | Table Names
     |--------------------------------------------------------------------------

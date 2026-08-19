@@ -13,6 +13,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.10.0 - 2026-08-18
+
+### Fixed
+
+- **An unlimited allowance denied everything.** `included_quantity = null` is
+  documented as *unlimited*, and `remaining()` correctly answers `null` for it -
+  but `can()` treated that null as a refusal. The most generous configuration
+  produced the most restrictive outcome, and the Node twin has always read the
+  same row as unlimited, so the two runtimes disagreed about identical data.
+
+  The decision is now `Fms::allowsConsumption()`, which names the case. Note that
+  `remaining()` overloads `null` to mean both "unlimited" and "no pivot config";
+  `can()` rejects a missing config before it asks, so the only null reaching the
+  check is the unlimited one.
+
+- **The package hard-coded the consuming application's own model classes.**
+  `resolveSubscriptionScope()` referenced the app's `BillingSubscription` and
+  `User` classes directly, with comments instructing the reader to replace them -
+  an instruction nobody can follow, because by then the file is in `vendor/`. In
+  any application without those exact classes neither `instanceof` matched, so no
+  subscription ever resolved and **every `can()` returned false**.
+
+  Both are now configuration, beside the `product_feature_model` that already was.
+
+  **What to do:** set `fms.subscription_model` and `fms.user_model` in
+  `config/fms.php`. Left unset, scope resolution returns null rather than
+  guessing - the same answer you were already getting, now for a stated reason.
+
+
 ## [0.9.0] — 2026-08-07
 
 ### Changed

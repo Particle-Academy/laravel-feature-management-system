@@ -93,7 +93,7 @@ class Fms
         // Resource features check remaining quantity against usage.
         $remaining = $this->remaining($featureKey, $subscription);
 
-        if ($remaining === null || $remaining <= 0) {
+        if (! self::allowsConsumption($remaining)) {
             if ($message) {
                 $this->lastError = $message;
             }
@@ -148,6 +148,31 @@ class Fms
         $used = $usage?->used_quantity ?? 0;
 
         return max(0, (int) $config->included_quantity - (int) $used);
+    }
+
+
+    /**
+     * Does this remaining quantity permit one more unit?
+     *
+     * `null` means UNLIMITED here. `remaining()` overloads null to mean both
+     * "unlimited" and "no pivot config", but `can()` has already returned false
+     * for a missing config by the time it asks, so the only null that reaches
+     * this is the unlimited one.
+     *
+     * It used to be `$remaining === null || $remaining <= 0` -> deny, which
+     * inverted the intent: `included_quantity = null` is documented as
+     * unlimited, so the most generous configuration produced the most
+     * restrictive outcome, and an unlimited allowance denied everything. The
+     * Node twin has always read it as unlimited, so the two runtimes disagreed
+     * about the same row.
+     */
+    public static function allowsConsumption(?int $remaining): bool
+    {
+        if ($remaining === null) {
+            return true;
+        }
+
+        return $remaining > 0;
     }
 
     /**
@@ -419,23 +444,32 @@ class Fms
 
     /**
      * Resolve the current subscription scope from an explicit scope, a
-     * BillingSubscription instance, or the currently authenticated user.
-     * 
-     * NOTE: Update BillingSubscription and User class references to match your application
+     * subscription instance, or the currently authenticated user.
+     *
+     * Both models are CONFIGURATION (`fms.subscription_model`,
+     * `fms.user_model`), like `fms.product_feature_model` beside them. They used
+     * to be hard-coded to the consuming application's own classes with a comment
+     * telling the reader to replace them -- an instruction nobody can follow,
+     * because by then the file is in `vendor/`. Any app without those exact
+     * classes matched neither `instanceof`, so no subscription resolved and
+     * every `can()` denied.
      */
     protected function resolveSubscriptionScope(mixed $scope)
     {
-        // Replace with your BillingSubscription model class
-        $billingSubscriptionClass = \App\Models\BillingSubscription::class;
-        
+        $billingSubscriptionClass = config('fms.subscription_model');
+
+        if (! $billingSubscriptionClass || ! class_exists($billingSubscriptionClass)) {
+            return null;
+        }
+
         if ($scope instanceof $billingSubscriptionClass) {
             return $scope;
         }
 
-        // Replace with your User model class
-        $userClass = \App\Models\User::class;
+        $userClass = config('fms.user_model');
+        $isUser = $userClass && class_exists($userClass) && $scope instanceof $userClass;
 
-        if ($scope instanceof Authenticatable || $scope instanceof $userClass) {
+        if ($scope instanceof Authenticatable || $isUser) {
             return $billingSubscriptionClass::query()
                 ->where('owner_type', $scope::class)
                 ->where('owner_id', (string) $scope->id)
