@@ -34,7 +34,7 @@ use ParticleAcademy\Fms\Quota;
  */
 
 /** Moved deliberately, never automatically. A pin that follows disk asserts nothing. */
-const PINNED_SUITE_VERSION = '0.4.0';
+const PINNED_SUITE_VERSION = '0.5.0';
 
 /** Dispatch one case to the implementation under test. */
 function runEntitlementCase(array $case): mixed
