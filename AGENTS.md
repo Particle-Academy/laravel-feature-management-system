@@ -91,7 +91,7 @@ if the allowance stopped running out**, and anything touching `Fms` goes through
 `Fms` had no end-to-end test at all until 0.11.0, and that is exactly why the two
 worst bugs in its history lived there.
 
-The conformance rows come from a checkout until `fancy-conformance` releases the
-suite: `tests/Support/SharedSuites.php` resolves the root and **fails rather than
-skips** when it cannot. Delete it and call `Conformance::runTable()` directly
-once the installed package carries the suite.
+The conformance rows load from the INSTALLED `particle-academy/fancy-conformance`
+package, never a relative path to a sibling checkout — that is what made its two
+predecessor harnesses work in exactly one directory layout. `PINNED_SUITE_VERSION`
+is moved deliberately, never to match whatever is on disk.

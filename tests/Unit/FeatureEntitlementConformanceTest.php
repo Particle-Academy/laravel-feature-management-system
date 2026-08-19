@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use ParticleAcademy\Conformance\Conformance;
 use ParticleAcademy\Fms\Quota;
-use ParticleAcademy\Fms\Tests\Support\SharedSuites;
 
 /**
  * The `shared/feature-entitlement` table, run against THIS side.
@@ -26,7 +25,18 @@ use ParticleAcademy\Fms\Tests\Support\SharedSuites;
  * amount, not the distance from the line. The obvious
  * `max(0, after - included)` answers 50 where the truth is 10, re-billing every
  * unit already recorded. That one is an invoice, not a test failure.
+ *
+ * Loaded from the INSTALLED package via `Conformance::cases()`, never a relative
+ * path to a sibling checkout: the conformance repo's own runner notes record why
+ * — its two older parity harnesses hard-coded `../../<repo>/src/`, so they
+ * worked in exactly one directory layout and silently no-op'd everywhere else,
+ * CI included.
  */
+
+/** Moved deliberately, never automatically. A pin that follows disk asserts nothing. */
+const PINNED_SUITE_VERSION = '0.4.0';
+
+/** Dispatch one case to the implementation under test. */
 function runEntitlementCase(array $case): mixed
 {
     $in = $case['input'];
@@ -65,19 +75,15 @@ function runEntitlementCase(array $case): mixed
     };
 }
 
-it('loads the shared/feature-entitlement suite', function () {
+it('loads the shared/feature-entitlement suite from the installed package', function () {
     // The vacuity guard, and the one that matters most. A suite that resolves,
     // returns nothing and reports "0 failed" reads exactly like full coverage.
-    $cases = Conformance::cases(
-        'shared/feature-entitlement',
-        SharedSuites::root('shared/feature-entitlement'),
-    );
-
-    expect(count($cases))->toBeGreaterThanOrEqual(26);
+    expect(count(Conformance::cases('shared/feature-entitlement')))->toBeGreaterThanOrEqual(26);
+    expect(Conformance::version())->toBe(PINNED_SUITE_VERSION);
 });
 
 it('agrees with the shared feature-entitlement table', function () {
-    $summary = SharedSuites::runTable('shared/feature-entitlement', 'runEntitlementCase'(...));
+    $summary = Conformance::runTable('shared/feature-entitlement', 'runEntitlementCase'(...));
 
     // Printed unconditionally, pass or fail. A summary shown only on failure
     // cannot tell anyone the suite ran at all.

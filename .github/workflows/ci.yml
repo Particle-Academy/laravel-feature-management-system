@@ -58,20 +58,5 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
 
-      # `shared/feature-entitlement` is newer than the released fixture package,
-      # so the rows come from a checkout until fancy-conformance cuts the release
-      # that carries them. FANCY_CONFORMANCE_ROOT is read FIRST by the runner and
-      # a missing root is a FAILURE, not a skip — a conformance suite that
-      # silently does not run reads exactly like full coverage.
-      #
-      # Drop this step (and the env below) once the installed package has it.
-      - name: Check out the shared conformance fixtures
-        uses: actions/checkout@v4
-        with:
-          repository: Particle-Academy/fancy-conformance
-          path: .fancy-conformance
-
       - name: Run Pest tests
-        env:
-          FANCY_CONFORMANCE_ROOT: ${{ github.workspace }}/.fancy-conformance
         run: vendor/bin/pest --compact
