@@ -13,6 +13,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.12.0 - 2026-08-20
+
+### Added
+
+- **`ProvidesFeatureManagerDefaults` — a trait that unbreaks anyone who
+  implements or decorates `FeatureManagerInterface`.**
+
+  0.11.0 added `isEntitled()` and `canConsume()` to the interface. That breaks
+  every implementer, and it breaks them at AUTOLOAD rather than at a call site:
+
+  ```
+  Class App\Services\Fms\MoicFmsManager contains 2 abstract methods and must
+  therefore be declared abstract or implement the remaining methods
+  Script @php artisan package:discover returned with error code 255
+  ```
+
+  The app — and `artisan` itself — is unbootable until someone writes the
+  methods, and it happens mid-`composer update`, before any of their code runs.
+
+  **What to do if this hit you:** add one line to your implementation.
+
+  ```php
+  use ParticleAcademy\Fms\Concerns\ProvidesFeatureManagerDefaults;
+
+  class MyFeatureManager implements FeatureManagerInterface
+  {
+      use ProvidesFeatureManagerDefaults;   // <- both methods, for free
+  }
+  ```
+
+  Both defaults are built only from methods that pre-date 0.11.0, so they hold
+  whatever your implementation stores, and they behave the way the concrete
+  `Fms` service does: `isEntitled()` is `canAccess()`, and `canConsume()` is
+  entitled AND the amount fits what `remaining()` reports — with **null meaning
+  unlimited, never zero.**
+
+### Changed
+
+- **Release notes now separate breaking-for-CALLERS from
+  breaking-for-IMPLEMENTERS.** 0.11.0's notes were thorough about the first and
+  silent about the second, which is why this was found by a fatal rather than
+  by reading. They are different audiences with different failure modes: a
+  caller chooses when to adopt a change, an implementer does not, and finds out
+  when their app stops booting.
+
+  This bites decorators hardest, and that is the uncomfortable part —
+  **decorating the manager is the pattern this package recommends** so consumers
+  need not fork it. The shape we encourage is the one an interface addition
+  breaks first.
+
+- **A method added to `FeatureManagerInterface` now ships with a default in
+  `ProvidesFeatureManagerDefaults`, in the same release.** If no sensible
+  default can be written from methods already on the interface, that is the
+  signal the addition is a MAJOR change — not a signal to skip the default.
+
+  Reported by a consumer whose 0.9.0 → 0.11.0 upgrade fatalled during
+  `composer update`.
+
+
 ## 0.11.0 - 2026-08-19
 
 Three rulings from the owner, plus two things that were found dead while
