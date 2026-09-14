@@ -1,7 +1,8 @@
-[![Powered by Tynn](https://img.shields.io/endpoint?url=https%3A%2F%2Ftynn.ai%2Fo%2Fparticle-academy%2Flaravel-catalog%2Fbadge.json)](https://tynn.ai/o/particle-academy/laravel-catalog)
-
-[![Fancy UI suite](art/fancy-ui.svg)](https://particle.academy)
 # Laravel Feature Management System (FMS)
+
+[![Fancified](art/fancified.svg)](https://particle.academy)
+
+[![Powered by Tynn](https://img.shields.io/endpoint?url=https%3A%2F%2Ftynn.ai%2Fo%2Fparticle-academy%2Flaravel-catalog%2Fbadge.json)](https://tynn.ai/o/particle-academy/laravel-catalog)
 
 A standalone Laravel package for flexible feature access control and management. FMS provides simple, intuitive ways to control feature access using multiple strategies: Gates/Policies, config-based, registry-based, and database lookups.
 
@@ -14,7 +15,7 @@ A standalone Laravel package for flexible feature access control and management.
 - **Facade & Helpers**: Clean API via facade and global helper functions
 - **Standalone Package**: Zero dependencies on other packages
 - **Configurable schema**: Override the `feature_usages` / `subscriptions` / `product_features` table names without forking
-- **Laravel 13 Compatible**: Built for Laravel 11+, 12+, and 13+
+- **Laravel 13 Compatible**: Built for Laravel 13+
 
 ## Installation
 
@@ -514,8 +515,8 @@ usages table in your own migration if you prefer.
 
 ## Requirements
 
-- PHP 8.2+
-- Laravel 11+, 12+, or 13+
+- PHP 8.4+
+- Laravel 13+
 
 ## Testing
 
