@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   called its helpers, and its last release (2026-07-29) is past the org's
   third-party freshness bar. Dev-only: nothing a consumer installs changes.
   **Consumer action: none.**
+- Rebranded the display name to Fancy Dev Kit (README and package description). Package names, the npm scope, URLs and the `fancy-ui` MCP id are unchanged.
 
 ## 0.12.0 - 2026-08-20
 
