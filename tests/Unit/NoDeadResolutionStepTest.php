@@ -30,6 +30,17 @@ it('does not describe a database resolution strategy', function () {
         ->toBeFalse('config/fms.php advertises a database resolution step the package does not implement');
 });
 
+it('does not describe a database resolution strategy in the README', function () {
+    // The config claim went in 0.11.0 and the README kept it until 2026-11-17,
+    // because this guard read only the config file.
+    $source = file_get_contents(__DIR__.'/../../README.md');
+
+    expect(stripos($source, 'database lookups'))
+        ->toBeFalse('README.md advertises a database resolution step the package does not implement');
+    expect(str_contains($source, '**Database** - If `FeatureUsage` model exists'))
+        ->toBeFalse('README.md lists a database step in the resolution chain');
+});
+
 it('keeps the subclass hooks that DO work', function () {
     $manager = new ReflectionClass(\ParticleAcademy\Fms\Services\FeatureManager::class);
 

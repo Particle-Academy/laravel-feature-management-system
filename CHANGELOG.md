@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rebranded the display name to Fancy Dev Kit (README and package description). Package names, the npm scope, URLs and the `fancy-ui` MCP id are unchanged.
 - **Docs:** `AGENTS.md` is now the guide to using this package (install, its entries on the Fancy MCP catalog server, API essentials, traps). The contributor notes it held moved to `CONTRIBUTING.md`, and `CLAUDE.md` is now a symlink to it. The README points to the MCP server and to `AGENTS.md`. No code changed; nothing to do.
 
+### Fixed
+
+- **Docs:** `INTEGRATION.md` said Catalog does not require FMS. It does:
+  `particle-academy/laravel-catalog` requires `particle-academy/laravel-fms`
+  and its `Product` model uses `HasFeatureGroups`. The guide now describes the
+  one-way dependency.
+- **Docs:** the README still listed "database lookups" as a resolution
+  strategy, removed in 0.11.0. Step 5 is now described as what it is, a
+  `protected` subclass hook that declines by default. `NoDeadResolutionStepTest`
+  now checks the README as well as the config. No code changed; nothing to do.
+
 ## 0.12.0 - 2026-08-20
 
 ### Added

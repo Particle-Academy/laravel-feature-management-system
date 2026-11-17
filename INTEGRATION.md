@@ -1,15 +1,15 @@
 # Laravel Catalog Integration Guide
 
-This document describes how to integrate the Feature Management System (FMS) package with [Laravel Catalog](https://github.com/particle-academy/laravel-catalog) while maintaining complete independence.
+This document describes how to integrate the Feature Management System (FMS) package with [Laravel Catalog](https://github.com/particle-academy/laravel-catalog).
 
-**Note**: Both packages work independently. FMS does not require Catalog, and Catalog does not require FMS. Integration is optional and happens at the application level.
+**Note**: The dependency runs one way. FMS does not require Catalog and works on its own. **Catalog requires FMS** (`particle-academy/laravel-fms` is in its `composer.json` `require`, and its `Product` model uses FMS's `HasFeatureGroups` trait), so installing Catalog installs FMS too.
 
 ## Design Principles
 
-### Independence
-- **FMS has zero dependencies on Laravel Catalog** - verified by codebase analysis
-- **Catalog can optionally use FMS** - FMS is not required for Catalog to function
-- **Integration happens at the application level** - not at the package level
+### Dependency direction
+- **FMS has zero dependencies on Laravel Catalog** - no Catalog class is referenced from FMS's `src/`
+- **Catalog depends on FMS** - it is a hard Composer requirement, not an optional integration
+- **Wiring the two together for your features happens at the application level** - routes, gates and config are yours
 
 ### Integration Points
 
@@ -26,10 +26,10 @@ Catalog can use FMS to control access to features like:
 - Admin UI access
 - Stripe sync capabilities
 
-#### 3. No Direct Package Coupling
-- Catalog does not require FMS in its `composer.json`
+#### 3. One-way Package Coupling
+- Catalog requires FMS in its `composer.json` and uses FMS's `HasFeatureGroups` trait on `Product`
 - FMS does not reference Catalog classes
-- Integration is achieved through Laravel's service container and facades
+- App-level integration is achieved through Laravel's service container and facades
 
 ## Integration Examples
 
@@ -238,30 +238,21 @@ class ProductController extends Controller
 - ✅ Standalone service provider registration
 
 ### Catalog Package Analysis
-- ✅ Catalog does not require FMS in `composer.json`
-- ✅ Catalog can function without FMS installed
-- ✅ FMS integration is optional at application level
+- Catalog requires FMS in `composer.json` (`particle-academy/laravel-fms`)
+- Catalog cannot be installed without FMS; Composer pulls FMS in
+- The dependency is one-way, so there is no cycle
 
 ## Testing Integration
 
-### Test Scenario 1: Both Packages Installed
+### Test Scenario 1: Catalog (installs FMS)
 ```bash
 composer require particle-academy/laravel-catalog
-composer require particle-academy/laravel-fms
 php artisan package:discover
 ```
 
-Both packages should load independently without conflicts.
+Both packages load; FMS arrives as Catalog's dependency.
 
-### Test Scenario 2: Catalog Without FMS
-```bash
-composer require particle-academy/laravel-catalog
-# FMS not installed
-```
-
-Catalog should function normally without FMS.
-
-### Test Scenario 3: FMS Without Catalog
+### Test Scenario 2: FMS Without Catalog
 ```bash
 composer require particle-academy/laravel-fms
 # Catalog not installed
@@ -351,8 +342,8 @@ foreach ($plans as $plan) {
 
 ## Summary
 
-FMS and Catalog maintain complete independence while allowing seamless integration at the application level. This design ensures:
-- Packages can be used independently
+FMS stands alone; Catalog builds on FMS. This design ensures:
+- FMS can be used without Catalog
 - No circular dependencies
 - Flexible integration patterns
 - Easy testing and maintenance

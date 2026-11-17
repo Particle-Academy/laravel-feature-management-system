@@ -4,7 +4,7 @@
 
 [![Powered by Tynn](https://img.shields.io/endpoint?url=https%3A%2F%2Ftynn.ai%2Fo%2Fparticle-academy%2Flaravel-catalog%2Fbadge.json)](https://tynn.ai/o/particle-academy/laravel-catalog)
 
-A standalone Laravel package for flexible feature access control and management. FMS provides simple, intuitive ways to control feature access using multiple strategies: Gates/Policies, config-based, registry-based, and database lookups.
+A standalone Laravel package for flexible feature access control and management. FMS provides simple, intuitive ways to control feature access using multiple strategies: Gates/Policies, config-based, registry-based, and feature groups, plus app-registered pre-strategies.
 
 <!-- fancy-agents-note:start -->
 > **For agents.** This package is listed on the Fancy MCP catalog server at
@@ -15,7 +15,7 @@ A standalone Laravel package for flexible feature access control and management.
 
 ## Features
 
-- **Multiple Access Control Strategies**: Gates/Policies, config files, feature registry, or database
+- **Multiple Access Control Strategies**: Gates/Policies, config files, feature registry, feature groups, or your own pre-strategies
 - **Boolean & Resource Features**: Support for simple on/off features and metered resource features
 - **Feature Groups**: Bundle features into reusable groups (Pro plan, Enterprise, AI Beta cohort, etc.) and assign them polymorphically to any model
 - **Middleware Protection**: Protect routes based on feature access
@@ -351,7 +351,7 @@ FMS checks features in this order:
 2. **Feature Registry** - Checks registered features via `FmsFeatureRegistry`
 3. **Feature Groups** - Any enabled group containing the feature flips it on
 4. **Config File** - Checks `config/fms.features.{feature}`
-5. **Database** - If `FeatureUsage` model exists, checks database (extensible)
+5. **Subclass hook** - `checkDatabaseFeature()`, a `protected` extension point. The package's own implementation always declines, so nothing resolves from the database out of the box; override it in a `FeatureManager` subclass, or use a pre-strategy
 
 ### Pre-strategies (v0.6.0+)
 
