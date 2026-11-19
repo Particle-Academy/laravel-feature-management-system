@@ -1,9 +1,9 @@
 <?php
 
 /*
-| All current test classes extend ParticleAcademy\Fms\Tests\TestCase directly
-| (PHPUnit class-style). A `uses(TestCase::class)->in(...)` here would conflict
-| with the explicit inheritance and Pest errors with "test case can not be
-| used / already uses ...". If we add Pest function-style tests later, scope
-| the `uses()` call to a folder that contains only those.
+| Each test file declares its own base with `uses(TestCase::class)` or
+| `uses(CommerceTestCase::class)`, because the two folders mix both. A
+| folder-wide `uses(...)->in(...)` here would conflict with those calls.
+|
+| TestCase is a hand-built Laravel application (no orchestra/testbench).
 */

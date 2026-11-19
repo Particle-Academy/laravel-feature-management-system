@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Tests moved to Pest 5; `orchestra/testbench` removed from require-dev, replaced
+  by a small first-party harness on `laravel/framework` (already a runtime
+  requirement). The one Mockery mock (it came in through testbench) is now a
+  hand-written recording subclass. No runtime change. **Consumer action: none.**
 - Dropped the unused `pestphp/pest-plugin-laravel` dev dependency. No test
   called its helpers, and its last release (2026-07-29) is past the org's
   third-party freshness bar. Dev-only: nothing a consumer installs changes.

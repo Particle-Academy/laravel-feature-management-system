@@ -6,7 +6,6 @@ use ParticleAcademy\Fms\Services\FeatureManager;
 use ParticleAcademy\Fms\Services\FmsFeatureRegistry;
 use ParticleAcademy\Fms\Tests\TestCase;
 use Illuminate\Support\Facades\Gate;
-use Mockery;
 
 uses(TestCase::class);
 
@@ -20,17 +19,27 @@ it('implements FeatureManagerInterface', function () {
 it('checks gate first when gate exists', function () {
     Gate::define('test-gate-unit', fn() => true);
     
-    $registry = Mockery::mock(FmsFeatureRegistry::class);
-    $registry->shouldNotReceive('definition'); // Should not check registry if gate works
-    
+    // A registry that records every lookup: it should not be asked at all
+    // when a gate answers.
+    $registry = new class extends FmsFeatureRegistry
+    {
+        public int $definitionCalls = 0;
+
+        public function definition(string $key): ?array
+        {
+            $this->definitionCalls++;
+
+            return parent::definition($key);
+        }
+    };
+
     $manager = new FeatureManager($registry);
-    
-    // Gate::has() may not work properly in Testbench without full bootstrap
-    // So we test that the manager attempts to check gates first
+
     $result = $manager->canAccess('test-gate-unit', null);
-    
+
     // Result should be boolean (true if gate works, false if it falls through)
     expect($result)->toBeBool();
+    expect($registry->definitionCalls)->toBe(0);
 });
 
 it('falls back to registry when gate does not exist', function () {
