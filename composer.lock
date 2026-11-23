@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4f188f86c1511b6fc223ce2eaff6b270",
+    "content-hash": "f64b67cd7164c3b36ce77e52062974db",
     "packages": [
         {
             "name": "brick/math",
@@ -6415,16 +6415,16 @@
         },
         {
             "name": "particle-academy/fancy-conformance",
-            "version": "v0.5.0",
+            "version": "v0.62.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Particle-Academy/fancy-conformance.git",
-                "reference": "e06564ec9405500454c597b4cb9853cf8c8b8cc4"
+                "reference": "3931e9fd43c16bf4c79e946d5bd4e4d85741dbf4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Particle-Academy/fancy-conformance/zipball/e06564ec9405500454c597b4cb9853cf8c8b8cc4",
-                "reference": "e06564ec9405500454c597b4cb9853cf8c8b8cc4",
+                "url": "https://api.github.com/repos/Particle-Academy/fancy-conformance/zipball/3931e9fd43c16bf4c79e946d5bd4e4d85741dbf4",
+                "reference": "3931e9fd43c16bf4c79e946d5bd4e4d85741dbf4",
                 "shasum": ""
             },
             "require": {
@@ -6466,7 +6466,8 @@
                 "issues": "https://github.com/Particle-Academy/fancy-conformance/issues",
                 "source": "https://github.com/Particle-Academy/fancy-conformance"
             },
-            "time": "2026-08-19T10:02:09+00:00"
+            "time": "2026-11-22T03:55:36+00:00",
+            "published-time": "2026-11-22T03:58:31+00:00"
         },
         {
             "name": "pestphp/pest",
